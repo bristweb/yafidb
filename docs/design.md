@@ -5,46 +5,57 @@ This document describes the whole system: what is stored, how writes and reads w
 ## Contents
 
 1. [The core idea](#the-core-idea)
-   - [Goals](#goals) and [Storage stages](#storage-stages)
-2. [Two worked examples](#two-worked-examples)
-3. [Storage](#storage)
-4. [File format and codecs](#file-format-and-codecs)
-5. [Writes](#writes)
-6. [Reads](#reads)
-7. [Models](#models)
-8. [Optional pattern: integrity](#optional-pattern-integrity)
-9. [Optional pattern: one owner per account and sagas](#optional-pattern-one-owner-per-account-and-sagas)
-10. [API](#api)
-11. [Failure taxonomy](#failure-taxonomy-races-partial-failures-and-torn-reads)
-12. [Fit and scale](#fit-and-scale)
-13. [First use case: the LLC cap table](#first-use-case-the-llc-cap-table)
-14. [Open questions](#open-questions)
+2. [Configuration, templates, and plug-ins](#configuration-templates-and-plug-ins)
+3. [Two worked examples](#two-worked-examples)
+4. [Storage](#storage)
+5. [File format and codecs](#file-format-and-codecs)
+6. [Writes](#writes)
+7. [Reads](#reads)
+8. [Models](#models)
+9. [Optional pattern: integrity](#optional-pattern-integrity)
+10. [Optional pattern: one owner per account and sagas](#optional-pattern-one-owner-per-account-and-sagas)
+11. [API](#api)
+12. [Failure taxonomy](#failure-taxonomy-races-partial-failures-and-torn-reads)
+13. [Fit and scale](#fit-and-scale)
+14. [First use case: the LLC cap table](#first-use-case-the-llc-cap-table)
+15. [Open questions](#open-questions)
 
 ## The core idea
 
-**Human-readable files are the source of truth. Writing them takes almost no CPU or server work. Any database engine can then be built from them, which is where scale comes from.**
+**YafiDB is files as a database. It is a file access layer with three independent, pluggable parts: the file format, the storage backend, and database compilation. Everything else is optional.**
 
-The system has three layers, and each layer has one job.
+YafiDB stands for "Yet Another File DB", a nod to YAML files. Human-readable files are the source of truth. YafiDB reads and writes those files and does nothing more. How the files are encoded, where they are stored, and whether they are compiled into a database are three separate choices made in one configuration file.
+
+```mermaid
+flowchart TB
+    C[Config] --> F[Format]
+    C --> S[Storage]
+    C --> D[Compile]
+```
+
+The config picks one plug-in for each of the three parts. The happy paths are simple, cheap, and open: YAML for the format, S3-compatible storage or git for storage, and either no compilation or SQLite. Other plug-ins are possible and are never required. See [Configuration, templates, and plug-ins](#configuration-templates-and-plug-ins).
+
+### How data flows
+
+The data flow has three layers, and each layer has one job.
 
 ```mermaid
 flowchart TB
     W[Writers] --> F[(Files)]
-    F --> P[Processor]
+    F --> P[Compiler]
     P --> D[(Any database)]
     D --> Q[Queries]
 ```
 
-The diagram reads top to bottom. Writers are thin and only append and flush. Files in any S3-compatible store are the source of truth. The processor builds a derived, rebuildable database of any engine from them. Queries, APIs, spreadsheets, and reports read from that database.
+1. **Files** hold the truth. A person can open any file in a text editor and read the history. The storage backend holds them.
+2. **Writers** do as little as possible. They check a request, append records to a file, and flush the file to storage. They keep no database and run no queries, so they need almost no CPU and no always-on server.
+3. **Compiling** is optional. A compiler turns files into whatever database engine the use case needs. Those databases are derived: delete one and rebuild it from the files. Queries, reports, and scale come from this layer when a project turns it on.
 
-1. **Files** hold the truth. A person can open any file in a text editor and read the history. All files are stored in any S3-compatible object store (a storage service that holds files and speaks Amazon's S3 protocol).
-2. **Writers** do as little as possible. They check a request, append records to a file, and flush the file to the store. They keep no database and run no queries, so they need almost no CPU and no always-on server.
-3. **Processing** turns files into whatever database engine the use case needs. Those databases are derived: delete one and rebuild it from the files. Queries, reports, and scale all come from this layer.
-
-This split is why the same design fits very different projects. The files stay simple at every size. The only part that grows is the derived database, and it can be any engine you choose.
+The files stay simple at every size. The only part that grows is the derived database, and it can be any engine you choose. This document also calls the compiler the processor.
 
 ### Goals
 
-YafiDB stands for "Yet Another File DB", a nod to YAML files. It has four core goals.
+YafiDB has four core goals.
 
 1. **Very easy for AI agents to spin up new projects.** A project is files plus model definitions. An AI can generate and read both, and there is no infrastructure to provision.
 2. **$0 cost for most any project.** Small projects cost nothing to run or to leave idle.
@@ -53,7 +64,7 @@ YafiDB stands for "Yet Another File DB", a nod to YAML files. It has four core g
 
 ### Storage stages
 
-Storage stages answer one question: where do the files live as a project grows? The files stay the same at every stage.
+Storage stages answer one question: where do the files live as a project grows? The files stay the same at every stage, and moving between stages is a configuration change, not a rewrite.
 
 ```mermaid
 flowchart TB
@@ -61,13 +72,13 @@ flowchart TB
     S --> C[Compiled database]
 ```
 
-1. **Git repo.** The files live in a git repository, and each commit is an append. This is the starter stage for small projects. It is free, keeps history, supports pull request review, and is easy for AI agents to use. Its limits are write concurrency and repository size.
+1. **Git repo.** The files live in a git repository, and each commit is an append. This is the starter stage for small projects. It is free, keeps history, supports pull request review, and is easy for AI agents to use. Its limits are speed, write concurrency, and repository size. Choosing git means accepting those limits.
 2. **Object storage.** The files move to S3-compatible object storage, with thin writers doing conditional writes. This is the path when write concurrency or size needs it.
-3. **Compiled database.** A processor compiles the files into any database engine. It is optional and works with either of the first two stages.
+3. **Compiled database.** A compiler turns the files into any database engine. It is optional and works with either of the first two stages.
 
 ### Range
 
-The same core idea covers a wide range. Only the processing layer and the optional patterns change.
+The same core idea covers a wide range. Only the configuration and the optional patterns change.
 
 | Scale | Example | What it uses |
 | --- | --- | --- |
@@ -77,14 +88,16 @@ The same core idea covers a wide range. Only the processing layer and the option
 | Banking | Accounts and money movement | The same, plus the optional patterns: signed hash chains, one owner per account, and sagas |
 | Very large scale | A video site's channels, comments, and likes | The same, plus tiered derived databases and shared physical files |
 
-### Optional patterns
+### Optional layers and features
 
-Some use cases need stronger guarantees, such as money movement. This design offers optional patterns for them. They are not part of the definition of the system. A weekend project uses none of them.
+YafiDB itself is only the file access layer. Everything below is an optional layer or feature. A project turns each one on in its configuration, per project or per data type, and a weekend project uses none of them.
 
 - **Integrity:** hash chaining and signatures that make history tamper-evident. See [Optional pattern: integrity](#optional-pattern-integrity).
 - **One owner per account:** a single writer per account, so two requests for the same account never run at once. See [Optional pattern: one owner per account and sagas](#optional-pattern-one-owner-per-account-and-sagas).
 - **Sagas:** a way to make an action that touches several accounts finish completely or be reversed. Same section.
 - **Tiered derived databases:** several layers of freshness for very large read loads. See [Reads](#reads).
+- **Models:** JSON Schema for fields and CEL for derived values. See [Models](#models).
+- **API:** a REST API generated from the models. See [API](#api).
 
 ### Why the records are YAML today
 
@@ -96,11 +109,107 @@ Every record file is YAML today. YAML was chosen for these reasons:
 - **Markdown without escaping.** A `|` block holds Markdown, and embedded JSON, YAML, code, CSV, or HTML, exactly as typed.
 - **Universal tooling.** Parsers exist in almost every language.
 
-YAML is the current format, not a permanent commitment. Reading and writing go through a pluggable codec, so a future version can adopt another format, such as a YAML 2 or a format not yet invented. See [File format and codecs](#file-format-and-codecs).
+YAML is the current format, not a permanent commitment. The format is one of the three pluggable parts, so a future version can adopt another format, such as a YAML 2 or a format not yet invented. See [File format and codecs](#file-format-and-codecs).
+
+## Configuration, templates, and plug-ins
+
+This section answers one question: how does a project choose its format, storage, and compilation?
+
+Each project has one configuration file, called `yafidb.yaml` in these examples. All key names here are illustrative, because no code exists yet. The file has one section for each of the three parts.
+
+### The three parts and their options
+
+| Part | What it decides | Happy paths | Other plug-ins (optional examples) |
+| --- | --- | --- | --- |
+| **Format** | How records are encoded in a file | YAML | A future YAML 2, or a format not yet invented |
+| **Storage** | Where the files live | S3-compatible storage (for example Cloudflare R2's free tier), or git | A local folder, or [Cloudflare Artifacts](https://developers.cloudflare.com/artifacts/platform/pricing/) |
+| **Compile** | Whether and how files become a database | None, or SQLite | DuckDB, Parquet, Postgres, or any other engine |
+
+The happy paths are the defaults to reach for. They are simple, they cost $0 or close to it, and they use open formats and open software. The other plug-ins are possible but optional, and they are examples, not defaults.
+
+Cloudflare Artifacts is git-compatible versioned storage built on Durable Objects. It requires the Workers Paid plan, which has a $5 per month minimum, so it is not a $0 path. See its [pricing page](https://developers.cloudflare.com/artifacts/platform/pricing/).
+
+### Templates
+
+A **template** is a named starting point that prefills the config with one choice for each part. A user can start from a template, change any part, or bring their own plug-in. Template names here are illustrative.
+
+| Template | Format | Storage | Compile | Good for |
+| --- | --- | --- | --- | --- |
+| `git+yaml+none` | YAML | git | None | The simplest start: files in a repo, no database |
+| `git+yaml+sqlite` | YAML | git | SQLite | A repo of files with a small query database |
+| `s3+yaml+none` | YAML | S3-compatible | None | Files in a bucket, read directly |
+| `s3+yaml+sqlite` | YAML | S3-compatible | SQLite | Files in a bucket plus a small query database |
+
+Templates are shortcuts, not separate products. Each one only fills in the three sections below, and each part can still be changed afterward. The repository has an example config for each template in [examples/config/](../examples/config/).
+
+### An example config
+
+This is the config for the `git+yaml+none` template, the simplest happy path.
+
+```yaml
+# yafidb.yaml (key names are illustrative)
+template: git+yaml+none
+format:
+  type: yaml
+  version: 1
+storage:
+  type: git
+  path: records/
+compile:
+  type: none
+```
+
+This is a project that chose its own mix: S3-compatible storage, YAML, and a SQLite database, plus optional integrity on one data type.
+
+```yaml
+# yafidb.yaml (key names are illustrative)
+format:
+  type: yaml
+  version: 1
+storage:
+  type: s3
+  bucket: my-records
+  endpoint: https://example.r2.cloudflarestorage.com
+compile:
+  type: sqlite
+  output: derived/app.sqlite
+features:
+  integrity:
+    data_types: [contribution]   # hash chain and signatures for this type only
+```
+
+### Plug-ins
+
+A **plug-in** is a replacement for one of the three parts. Anyone can bring their own: a custom format codec, a custom storage backend, or a custom compiler. This section describes each plug-in type only at the interface level, meaning what it must provide. The design does not yet define code.
+
+**A format codec must provide:**
+
+- A name and version, such as `yaml/1`, that files declare in their header.
+- A way to read a file's bytes into records, including reading the header.
+- A way to write records into bytes.
+- A way to add records to the end of existing file content.
+
+**A storage backend must provide:**
+
+- A way to list the files under a path.
+- A way to read a file and get back a version tag that identifies that exact content.
+- A way to write a file only if its version tag is unchanged, so two writers cannot overwrite each other. For S3-compatible storage this is a conditional write. For git it is a commit on top of a known commit.
+- Optionally, a way to announce that a file changed, so a compiler can run.
+
+A backend that cannot offer one of these must say so. Git, for example, is slow and has limited write concurrency, and a user who picks it accepts that.
+
+**A compiler must provide:**
+
+- A name for the database engine and a place to write its output.
+- A way to build the whole database from scratch from all the files, so a lost database can always be rebuilt.
+- Optionally, a way to update the database from only the files that changed.
+- A promise never to change the files. The database is derived and the files stay the source of truth.
+
+The three plug-in types are independent. A custom codec works with any storage backend, and a custom compiler works with any codec and backend, because each part only talks to the others through these interfaces.
 
 ## Two worked examples
 
-All values here are illustrative. The first example uses only the core idea. The second adds the optional patterns.
+All values here are illustrative. The first example uses only the core idea with the `s3+yaml+sqlite` template. The second adds the optional patterns.
 
 ### A weekend project: a guestbook
 
@@ -135,7 +244,7 @@ Storage answers one question: where does the truth live, and what does it look l
 
 ### Record files
 
-The truth is a set of readable **record files**. They live in the current storage stage: a git repository for small projects, or an S3-compatible object store when write concurrency or scale needs it. A record file holds an append-only sequence of records. Records are only added, never edited in place, so a file reads as a history. Today each record is a YAML document, and one file holds several documents separated by `---`, which is standard multi-document YAML.
+The truth is a set of readable **record files**. They live in the configured storage backend: a git repository for small projects, an S3-compatible object store when write concurrency or scale needs it, or another storage plug-in. A record file holds an append-only sequence of records. Records are only added, never edited in place, so a file reads as a history. Today each record is a YAML document, and one file holds several documents separated by `---`, which is standard multi-document YAML.
 
 ```yaml
 ---
@@ -187,9 +296,13 @@ note: |
   ```
 ````
 
-### Object store and the "S3 cannot append" problem
+### Git storage
 
-The store is any S3-compatible service. Cloudflare R2 is the first choice. At large scale the store can be your own S3-compatible storage placed near the processor.
+With the git backend, the files live in a repository and each commit is a write. Git is free, keeps history, supports pull request review, and is easy for AI agents to work in. It is also slow for writes, it allows limited write concurrency, and repository size grows with history. YafiDB is only the file access layer, so choosing git means accepting those limits. Projects that outgrow them move the same files to S3-compatible storage.
+
+### S3-compatible storage and the "S3 cannot append" problem
+
+The S3-compatible backend works with any S3-compatible service. Cloudflare R2 is the first choice, and its free tier fits the $0 goal. At large scale the store can be your own S3-compatible storage placed near the processor.
 
 S3-compatible stores cannot append to an object. To add a record, the writer rewrites the whole object. To make that safe, it uses a **conditional write**: it sends the object's version tag (ETag) in an `If-Match` header, and the store rejects the write if someone else changed the object first. The writer then re-reads and retries. For records that several writers might touch, the optional one-owner-per-account pattern makes such conflicts rare.
 
@@ -206,10 +319,10 @@ Each file name and path is stable and predictable, so any tool can find records 
 
 This section answers one question: how can the file format change later without breaking old data?
 
-All files are YAML today. The format is pluggable, so a future version can adopt another one, such as a YAML 2 or a format not yet invented. The design supports this in three ways.
+All files are YAML today. The format is one of the three pluggable parts, so a future version can adopt another one, such as a YAML 2 or a format not yet invented. The interface a codec must provide is described in [Plug-ins](#plug-ins). The design supports format changes in three ways.
 
 1. **Each file declares its format and version in a header.** The first document of every file says which format it uses, for example `format: yaml/1`. A reader looks at the header before it parses anything else.
-2. **All reading and writing goes through a codec.** A codec is a small module with two jobs: turn a file's bytes into records, and turn records back into bytes. Writers, the processor, and the API never touch the file syntax directly. They ask the codec registered for the file's declared format.
+2. **All reading and writing goes through a codec.** A codec is a small module that turns a file's bytes into records, turns records back into bytes, and can add records to the end of a file. Writers, the processor, and the API never touch the file syntax directly. They ask the codec registered for the file's declared format.
 3. **Switching formats is a new codec plus a migration.** A new format needs a codec that reads and writes it. Moving existing data to it is a migration that follows the same pattern as a schema migration: the migration script is deterministic and starts new files with a clear link to the old ones. Old files stay readable by their old codec, so nothing has to be converted before it is needed.
 
 The header is the one thing every codec must be able to read, because it tells the reader which codec to use. Its exact syntax is an open question (see [Open questions](#open-questions)).
@@ -247,7 +360,7 @@ For use cases that need stronger guarantees, see [Optional pattern: one owner pe
 
 Reads answer one question: how do users query fast data that is built from slow, readable files?
 
-Files are not queried directly. A processor builds a derived database from them, and queries run against that database. The database can be any engine, so scale is limited only by the engine you pick.
+Compilation is optional. A small project can skip it and read the files themselves. A project that needs fast queries turns it on, and then a processor (the compiler) builds a derived database from the files, and queries run against that database. The database can be any engine, so scale is limited only by the engine you pick.
 
 ### Flush events
 

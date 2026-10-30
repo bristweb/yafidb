@@ -4,7 +4,7 @@ This document lists the real costs and risks of the design, so nobody is surpris
 
 ## You own the engine
 
-The writer, the processor, the codecs, and the code that generates the API are custom code that you build and run. The optional patterns (owners, sagas, integrity, tiers) add more. This is the biggest cost. It is acceptable because the core is small, the LLC use case needs only part of the patterns, and the rest can be added later.
+The configuration loader, the writer, the processor, the codecs, and the code that generates the API are custom code that you build and run. The optional patterns (owners, sagas, integrity, tiers) add more. This is the biggest cost. It is acceptable because the core is small, the LLC use case needs only part of the patterns, and the rest can be added later.
 
 ## The owner runtime is the main lock-in point, when you use owners
 
@@ -37,6 +37,18 @@ Git is a supported backend for small and starter projects, with the files kept i
 - **Strengths:** it is free, it keeps full history, it supports pull request review, and it is easy for AI agents to work in.
 - **Limits:** many concurrent writers contend on commits, and a repository gets slower as it grows.
 - **What softens it:** move the same files to S3-compatible object storage with thin writers when write concurrency or size needs it. The files do not change in the move.
+
+## Cloudflare Artifacts is not a $0 path
+
+[Cloudflare Artifacts](https://developers.cloudflare.com/artifacts/platform/pricing/) is git-compatible versioned storage built on Durable Objects. It can be used as a storage plug-in, but it requires the Workers Paid plan, which has a $5 per month minimum. It is unavailable on the free Workers plan. It is therefore an optional example, not a happy path, and it does not meet the $0 goal.
+
+## Choosing git means accepting that it is slow
+
+YafiDB is only the file access layer, so it does not hide git's limits. Git writes are commits, which are slow and allow limited write concurrency. Repository size grows with history. A user who picks git accepts that, and can move the same files to S3-compatible storage later.
+
+## Custom plug-ins are your responsibility
+
+Anyone can bring their own format codec, storage backend, or compiler. Each must meet the plug-in interface (see the design). A plug-in that cannot offer part of an interface, such as a conditional write, must document that limit. The project does not test or support third-party plug-ins.
 
 ## The file format may change
 

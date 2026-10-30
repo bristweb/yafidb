@@ -1,0 +1,15 @@
+# A project that chose its own mix instead of a template.
+# Key names are illustrative. No code exists yet.
+format:
+  type: yaml
+  version: 1
+storage:
+  type: s3
+  bucket: ledger-records
+  endpoint: https://example.r2.cloudflarestorage.com
+compile:
+  type: sqlite
+  output: derived/ledger.sqlite
+features:
+  integrity:
+    data_types: [contribution]   # hash chain and signatures for this data type only

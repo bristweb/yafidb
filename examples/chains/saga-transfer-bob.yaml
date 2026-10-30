@@ -1,5 +1,7 @@
 # Bob's side of transfer t_881. Bob's owner is a different actor from Alice's.
 ---
+format: yaml/1
+---
 id: rec_0201
 idem: req_t881_bob_apply
 schema: ledger-entry@1

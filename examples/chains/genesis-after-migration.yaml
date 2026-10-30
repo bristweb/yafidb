@@ -1,6 +1,8 @@
 # First record of a new chain created by a schema migration.
 # It names the old chain and its last hash, so history is linked, not rewritten.
 ---
+format: yaml/1
+---
 id: rec_genesis
 schema: genesis@1
 data:

@@ -12,6 +12,7 @@ YafiDB keeps records in plain files—the source of truth—and turns them into 
 
 - **Keep data understandable:** records are ordinary files you can read, diff, back up, or work with using an AI assistant.
 - **Catch bad edits:** every write is checked against the schema you define.
+- **Writes included:** many tools can read flat files with a schema, and some can export new files. YafiDB also includes the write API: a small serverless worker that takes change requests, validates them, and adds records to the files.
 - **Add complexity only when needed:** start with files, then optionally build a site or database for faster reads and richer queries.
 
 ## An example record

@@ -6,7 +6,7 @@ This log records each decision, the alternatives that were considered and reject
 
 | # | Decision | Chosen | Main rejected alternative |
 | --- | --- | --- | --- |
-| 1 | Source of truth | Readable files in an S3-compatible store | Git repository |
+| 1 | Storage backend | Readable files, in git for small projects and in S3-compatible storage for scale | Git as the only backend |
 | 2 | Storage format | Append-only multi-document YAML (today) | A relational database |
 | 3 | Integrity | Optional pattern: hash chain plus Ed25519 signatures | Always-on, or none |
 | 4 | Model language | JSON Schema plus CEL | HyperFormula, custom language, SQL, formulas.ts |
@@ -20,14 +20,15 @@ This log records each decision, the alternatives that were considered and reject
 | 12 | Privacy deletion | Per-user encryption keys | Deleting bytes |
 | 13 | Core idea | Readable files as truth, any database derived from them | Defining the system as one chain per entity |
 | 14 | File format | Pluggable through a codec, YAML first | Hard-wiring YAML |
+| 15 | Core goals | AI-easy start, $0 cost, optional databases, pluggable storage by stage | A fixed storage and database stack |
 
-## 1. Source of truth: readable files in an object store, not Git
+## 1. Storage backend: git for small projects, object storage for scale
 
-**Chosen:** append-only readable files in any S3-compatible store.
+**Chosen:** the readable files are the source of truth, and the backend is pluggable by stage. Small and starter projects keep the files in a git repository. Projects that need write concurrency or scale keep them in S3-compatible object storage with thin writers. The files are the same in both.
 
-**Rejected:** a Git repository as the source of truth.
+**Rejected:** git as the only backend. An earlier version of this decision dropped git entirely, and this entry revises it: git is now a supported backend for the starter stage.
 
-**Why:** an object store gives conditional writes, cheap storage, event notifications, and files that any tool can read. The optional hash chain and signatures provide tamper evidence and history where a use case needs them. Git would add a second history mechanism with slower, whole-repository writes and no natural per-account serialization. Git is still used for code and model files.
+**Why:** git is free, keeps history, supports pull request review, and is easy for AI agents to work in, so it is the cheapest start. It is a poor fit for many concurrent writers, because writes are whole-repository commits and there is no per-account serialization, and repository size can grow without bound. Object storage gives conditional writes, cheap storage, event notifications, and files that any tool can read. The optional hash chain and signatures provide tamper evidence where a use case needs them. Git is also still used for code and model files.
 
 ## 2. Storage format: append-only YAML today
 
@@ -126,3 +127,16 @@ This log records each decision, the alternatives that were considered and reject
 **Rejected:** hard-wiring YAML into every part of the system.
 
 **Why:** YAML fits today for human readability, comments, appendable multi-document files, Markdown in `|` blocks without escaping, and universal parsers. The best format may change over the life of the data, and a codec keeps that change small. The exact header syntax is an open question in the [design](design.md#open-questions).
+
+## 15. Core goals: easy for AI, $0, optional databases, pluggable storage
+
+**Chosen:** YafiDB ("Yet Another File DB", a nod to YAML files) is built around four goals.
+
+1. **Very easy for AI agents to spin up new projects.** A project is files plus model definitions that an AI can generate and read, with no infrastructure to provision.
+2. **$0 cost for most any project.**
+3. **Infinite scaling through optional database writing.** Derived databases are opt-in.
+4. **Pluggable storage by stage.** The same files can live in a git repository, move to S3-compatible object storage, or be compiled into any database.
+
+**Rejected:** a fixed storage and database stack that every project must provision.
+
+**Why:** these goals come from the owner. Files plus models are something an AI can write without setting up servers, so starting is fast and free. Scale is added later by choosing a database, not by rewriting data. This is why decision 1 supports git as a starting backend.

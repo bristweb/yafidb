@@ -21,12 +21,13 @@ This log records each decision, the alternatives that were considered and reject
 | 13 | Core idea | Readable files as truth, any database derived from them | Defining the system as one chain per entity |
 | 14 | File format | Pluggable through a codec, YAML first | Hard-wiring YAML |
 | 15 | Core goals | AI-easy start, $0 cost, optional databases, pluggable storage by stage | A fixed storage and database stack |
+| 16 | Composition | Three independent plug-in parts chosen in one config, with templates and happy paths | A fixed stack, or a single bundled backend |
 
 ## 1. Storage backend: git for small projects, object storage for scale
 
 **Chosen:** the readable files are the source of truth, and the backend is pluggable by stage. Small and starter projects keep the files in a git repository. Projects that need write concurrency or scale keep them in S3-compatible object storage with thin writers. The files are the same in both.
 
-**Rejected:** git as the only backend. An earlier version of this decision dropped git entirely, and this entry revises it: git is now a supported backend for the starter stage.
+**Rejected:** git as the only backend. An earlier version of this decision dropped git entirely, and this entry revises it: git is now a supported backend for the starter stage. Decision 16 makes the backend one of three plug-in parts.
 
 **Why:** git is free, keeps history, supports pull request review, and is easy for AI agents to work in, so it is the cheapest start. It is a poor fit for many concurrent writers, because writes are whole-repository commits and there is no per-account serialization, and repository size can grow without bound. Object storage gives conditional writes, cheap storage, event notifications, and files that any tool can read. The optional hash chain and signatures provide tamper evidence where a use case needs them. Git is also still used for code and model files.
 
@@ -34,7 +35,7 @@ This log records each decision, the alternatives that were considered and reject
 
 **Chosen:** multi-document YAML (`---` separators) with freeform Markdown in `|` block scalars.
 
-**Why:** a person can read it, diff it, and export it. Block scalars carry Markdown, JSON, YAML, and code without escaping. Export for a user is handing them their file. YAML is the current format and is replaceable through a codec (see decision 14).
+**Why:** a person can read it, diff it, and export it. Block scalars carry Markdown, JSON, YAML, and code without escaping. Export for a user is handing them their file. YAML is the current format and is replaceable through a codec (see decisions 14 and 16).
 
 ## 3. Integrity is an optional pattern, per data type
 
@@ -140,3 +141,19 @@ This log records each decision, the alternatives that were considered and reject
 **Rejected:** a fixed storage and database stack that every project must provision.
 
 **Why:** these goals come from the owner. Files plus models are something an AI can write without setting up servers, so starting is fast and free. Scale is added later by choosing a database, not by rewriting data. This is why decision 1 supports git as a starting backend.
+
+## 16. Composable configuration: three plug-in parts, templates, and happy paths
+
+**Chosen:** YafiDB is only a file access layer. It has three independent, pluggable parts, each chosen in one configuration file (illustratively `yafidb.yaml`): the file format (codec), the storage backend, and database compilation, which is optional. Each part works with any choice for the other two. Everything else is an optional layer or feature that a project turns on per project or per data type: integrity, one owner per account, sagas, tiered databases, models, and the API.
+
+**Happy paths** are the simple, cheap, and open defaults: YAML for the format, S3-compatible storage (for example Cloudflare R2's free tier) or git for storage, and either no compilation or SQLite. **Templates** prefill the config with one happy-path choice per part, for example `git+yaml+none`, `git+yaml+sqlite`, `s3+yaml+none`, and `s3+yaml+sqlite` (names illustrative). A user can start from a template, pick their own option for any part, or bring their own plug-in.
+
+**Other plug-ins** are possible and are examples, not defaults: a local folder or Cloudflare Artifacts for storage, DuckDB, Parquet, or Postgres for compilation, and future formats such as a YAML 2. Cloudflare Artifacts needs the Workers Paid plan, which has a $5 per month minimum, so it is not a $0 path.
+
+**Plug-in interfaces** are defined at the interface level only. A format codec provides a name and version, reads bytes into records, writes records into bytes, and can add records to a file. A storage backend lists files, reads a file with a version tag, and writes only if the version tag is unchanged. A compiler names its engine and output, can rebuild from scratch, and never changes the files.
+
+**Git** stays a supported backend. Choosing it means accepting that git is slow for writes and limited in write concurrency, and that is the user's choice.
+
+**Rejected:** a fixed stack that every project must use, and a single bundled storage or database.
+
+**Why:** the owner's direction is that everything is composable and files act as the database. Independent parts let a project start free and simple, then change one part without touching the others or the files. This builds on decision 1 (pluggable storage), decision 14 (pluggable format), and decision 15 (goals). Config key names and template names are illustrative and may change.

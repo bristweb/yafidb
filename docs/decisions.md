@@ -250,3 +250,9 @@ The build can run in CI, or YafiDB can commit the generated site to a publish re
 
 **Why:** editing existing files is the hardest part of a file database: object storage rewrites whole objects, and in-place edits risk conflicts and corruption. Capping file size bounds the cost of every write and leaves older files immutable.
 
+## Record modes: checkpoint, patch, diff
+
+**Chosen:** every record sets exactly one mode. `checkpoint` holds the complete record, `patch` holds only changed fields (JSON Merge Patch rules), and `diff` holds unified line diffs of text fields. The mode is never assumed, and records never mix modes. JSON Patch (RFC 6902) and format-specific patch standards are not supported.
+
+**Why:** three modes cover structured data and data kept exactly as received, without supporting an open-ended list of patch types. Whether data is parsed into fields or kept as text is the engineer's choice. YafiDB stays blind to the original format.
+

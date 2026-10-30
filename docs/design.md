@@ -220,6 +220,56 @@ When both are set, whichever comes first starts the new file. With chaining on, 
 
 Each file name and path is stable and predictable, so any tool can find records without a database.
 
+### Changes: checkpoint, patch, and diff
+
+Records are never edited in place. A change is a new record, and every record must set `yafi.mode` to exactly one of three modes. A record with no mode is rejected, and a record never mixes modes.
+
+| Mode | What the record holds | How it is applied |
+|---|---|---|
+| `checkpoint` | The complete record | Replaces the current state |
+| `patch` | Only the changed fields, nested as deep as needed | Merged into the state from `base` (JSON Merge Patch rules, RFC 7386); arrays are replaced whole |
+| `diff` | A unified line diff for each changed text field | Applied to that field's text from `base` |
+
+Rules:
+
+- `patch` and `diff` records name their `base` (the `seq` they build on) and a `hash` of the full rebuilt record. The compile step rebuilds the record and checks the hash.
+- Fields that are left out keep their value from `base`.
+- YafiDB does not know where data came from. The engineer decides: keep original text, such as a JSON or XML response or a carrier log, as a text field and change it by `diff`, or parse it into YAML fields and change them by `patch`. A change that `patch` handles badly, such as one new item in a long parsed array, can be written as a new `checkpoint`.
+- The writer starts every new file with a `checkpoint` (see [File layout](#file-layout)), so each file can be read on its own. The schema can also force a checkpoint every N records to keep rebuilds short.
+- A snapshot that has not changed is not written.
+
+```yaml
+# order/1042/2026.yaml
+yafi: { seq: 1, mode: checkpoint, schema: order@1 }
+status: placed
+customer: { name: Alice, email: alice@example.com }
+shipTo: { city: Knoxville, state: TN }
+items:
+  - { sku: MUG-01, qty: 2, price: 12.50 }
+  - { sku: TEE-03, qty: 1, price: 20.00 }
+carrierLog: ""
+---
+yafi: { seq: 2, mode: patch, base: 1, hash: 7c2e… }
+status: shipped
+tracking: 1Z999AA10123456784
+---
+yafi: { seq: 3, mode: diff, base: 2, hash: 41ab… }
+carrierLog: |
+  @@ -0,0 +1,2 @@
+  +2026-10-30 09:14 Picked up, Knoxville TN
+  +2026-10-30 21:02 Departed facility, Nashville TN
+---
+yafi: { seq: 4, mode: diff, base: 3, hash: 9f3c… }
+carrierLog: |
+  @@ -2,0 +3 @@
+  +2026-10-31 13:40 Delivered, front porch
+---
+yafi: { seq: 5, mode: patch, base: 4, hash: d08b… }
+status: delivered
+```
+
+Seq 1 is the full order. Seqs 2 and 5 patch structured fields. Seqs 3 and 4 add lines to the carrier's raw log without copying the earlier lines.
+
 ## Record format
 
 This section answers one question: how can the record format change later without breaking old data?

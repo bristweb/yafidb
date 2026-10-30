@@ -1,6 +1,6 @@
 # Examples
 
-Sample files that show the shapes described in [docs/design.md](../docs/design.md). All names, IDs, and amounts are illustrative. Hashes and signatures are placeholders, not real values, because no code exists yet to compute them.
+Sample record files and models that show the shapes described in [docs/design.md](../docs/design.md). All names, IDs, and amounts are illustrative. Every record file starts with a format header (`format: yaml/1`). Hashes and signatures belong to the optional integrity pattern and are placeholders, not real values, because no code exists yet to compute them.
 
 | File | Shows |
 | --- | --- |

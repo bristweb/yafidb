@@ -3,6 +3,8 @@
 # "user_sig" is optional and proves the user asked for the action.
 # Hash and signature values are placeholders.
 ---
+format: yaml/1
+---
 id: rec_0001
 idem: req_7f3a            # idempotency key: a retry with the same key is ignored
 schema: contribution@1    # schema name and version

@@ -1,6 +1,8 @@
 # Alice's side of transfer t_881. Alice's owner checks her balance first.
 # Placeholders for hashes and signatures.
 ---
+format: yaml/1
+---
 id: rec_0101
 idem: req_t881_alice_pending
 schema: ledger-entry@1

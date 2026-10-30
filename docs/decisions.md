@@ -6,34 +6,38 @@ This log records each decision, the alternatives that were considered and reject
 
 | # | Decision | Chosen | Main rejected alternative |
 | --- | --- | --- | --- |
-| 1 | Source of truth | YAML chains in an S3-compatible bucket | Git repository |
-| 2 | Storage format | Append-only multi-document YAML | A relational database |
-| 3 | Integrity | Optional hash chain plus Ed25519 signatures | Always-on, or none |
+| 1 | Source of truth | Readable files in an S3-compatible store | Git repository |
+| 2 | Storage format | Append-only multi-document YAML (today) | A relational database |
+| 3 | Integrity | Optional pattern: hash chain plus Ed25519 signatures | Always-on, or none |
 | 4 | Model language | JSON Schema plus CEL | HyperFormula, custom language, SQL, formulas.ts |
 | 5 | Where formulas live | On each model | One shared formulas file |
-| 6 | Write coordination | One owner per account | Central worker, 2PC |
-| 7 | Cross-account actions | Sagas with a shared transaction ID | Single-record transfers, 2PC |
+| 6 | Write coordination | Optional pattern: one owner per account | Central worker, 2PC |
+| 7 | Cross-account actions | Optional pattern: sagas with a shared transaction ID | Single-record transfers, 2PC |
 | 8 | Queue storage | A bucket (R2 or any S3 store) | A key-value store |
 | 9 | API | Hono REST first | GraphQL first |
 | 10 | Official calculation | Server-side, signed and pinned CEL | Trust client results |
+| 11 | Schema migration | New files with a signed genesis record | Rewriting history |
+| 12 | Privacy deletion | Per-user encryption keys | Deleting bytes |
+| 13 | Core idea | Readable files as truth, any database derived from them | Defining the system as one chain per entity |
+| 14 | File format | Pluggable through a codec, YAML first | Hard-wiring YAML |
 
-## 1. Source of truth: object store with chains, not Git
+## 1. Source of truth: readable files in an object store, not Git
 
-**Chosen:** append-only chains in any S3-compatible bucket.
+**Chosen:** append-only readable files in any S3-compatible store.
 
 **Rejected:** a Git repository as the source of truth.
 
-**Why:** an object store gives conditional writes, cheap storage, event notifications, and per-account files, and the hash chain and signatures already provide tamper evidence and history. Git would add a second history mechanism with slower, whole-repository writes and no natural per-account serialization. Git is still used for code and model files.
+**Why:** an object store gives conditional writes, cheap storage, event notifications, and files that any tool can read. The optional hash chain and signatures provide tamper evidence and history where a use case needs them. Git would add a second history mechanism with slower, whole-repository writes and no natural per-account serialization. Git is still used for code and model files.
 
-## 2. Storage format: append-only YAML
+## 2. Storage format: append-only YAML today
 
 **Chosen:** multi-document YAML (`---` separators) with freeform Markdown in `|` block scalars.
 
-**Why:** a person can read it, diff it, and export it. Block scalars carry Markdown, JSON, YAML, and code without escaping. Export for a user is handing them their file.
+**Why:** a person can read it, diff it, and export it. Block scalars carry Markdown, JSON, YAML, and code without escaping. Export for a user is handing them their file. YAML is the current format and is replaceable through a codec (see decision 14).
 
-## 3. Integrity is optional per data type
+## 3. Integrity is an optional pattern, per data type
 
-**Chosen:** hash chaining (`prev`, `seq`) and Ed25519 signatures can be switched on per data type. The worker signs the chain wrapper, and the user may also sign their entry.
+**Chosen:** hash chaining (`prev`, `seq`) and Ed25519 signatures can be switched on per data type. The writer signs the chain wrapper, and the user may also sign their entry.
 
 **Why:** ledgers need strong history, while high-volume low-value types should not pay the cost. The signing key is kept apart from storage credentials so stolen bucket access cannot forge history.
 
@@ -60,26 +64,26 @@ This log records each decision, the alternatives that were considered and reject
 
 **Why:** opening a model shows its fields and math together, like a spreadsheet column carries its formula, with no separate file to search.
 
-## 6. One owner per account, not a central worker
+## 6. Optional pattern: one owner per account, not a central worker
 
-**Chosen:** a Durable Object-style actor per account, the only writer for that account. Cloudflare Durable Objects now, celld when self-hosted.
+**Chosen:** for use cases that need it, a Durable Object-style actor per account, the only writer for that account. Cloudflare Durable Objects now, celld when self-hosted.
 
 **Rejected:** a central transfer worker that handles all transfers.
 
 **Why:** a central worker would be one very busy component handling every user's traffic. A per-account owner spreads load, and owners for idle accounts cost nothing. Busy accounts split into sub-accounts.
 
-## 7. Sagas with a shared transaction ID
+## 7. Optional pattern: sagas with a shared transaction ID
 
-**Chosen:** cross-account actions are sagas between owners (pending, apply, confirm or reverse), tied by a shared transaction ID.
+**Chosen:** for use cases that need it, cross-account actions are sagas between owners (pending, apply, confirm or reverse), tied by a shared transaction ID.
 
 **Rejected:**
 
-- **Single-record-only transfers.** One record for the whole transfer cannot half-apply, but it leaves no authoritative transaction record on each account. Each account's chain should be an auditable record on its own.
+- **Single-record-only transfers.** One record for the whole transfer cannot half-apply, but it leaves no authoritative transaction record on each account. Each account's record should be auditable on its own.
 - **Two-phase commit.** It gives true all-or-nothing but is slow and complex, can deadlock, and a coordinator crash leaves participants locked. A saga plus single owners covers the same cases.
 
 ## 8. Queue in a bucket, not a key-value store
 
-**Chosen:** the write queue lives in R2 or another S3-compatible bucket.
+**Chosen:** the write queue lives in R2 or another S3-compatible store.
 
 **Why:** it is portable across providers and strongly consistent. A key-value store would be cheaper for some uses but ties the design to one vendor's service and may only be eventually consistent.
 
@@ -95,9 +99,9 @@ This log records each decision, the alternatives that were considered and reject
 
 **Why:** clients can fake what they display to themselves, so display needs no extra trust. Differences between implementations would be a defect in an implementation, not a design risk, so a pinned server implementation is a sufficient recommendation.
 
-## 11. Schema migration starts a new chain
+## 11. Schema migration starts new files
 
-**Chosen:** a migration creates a new chain whose first record is a signed genesis record naming the old chain's last hash. The migration script is deterministic and reproducible. Records carry a schema version.
+**Chosen:** a migration creates new files. With integrity on, the first record is a signed genesis record naming the old chain's last hash. The migration script is deterministic and reproducible. Records carry a schema version.
 
 **Why:** old history is never rewritten, and anyone can reproduce the migration.
 
@@ -106,3 +110,19 @@ This log records each decision, the alternatives that were considered and reject
 **Chosen:** personal data is stored encrypted with a per-user key. Deleting a user destroys the key (crypto-shredding).
 
 **Why:** an immutable log cannot delete bytes, but unreadable bytes are as good as deleted.
+
+## 13. Readable files are the truth, and any database is derived
+
+**Chosen:** the source of truth is a set of human-readable files in any S3-compatible store. Writers do the minimum work: check, append, and flush. A processor turns the files into any database engine, and those databases are derived and rebuildable. Per-account owners, sagas, hash chains, and signing are optional patterns for use cases that need them, such as money movement.
+
+**Rejected:** defining the system as one append-only chain per account or entity, with a per-account owner as a required part.
+
+**Why:** the main goal is to remove CPU and server overhead and to keep everything as human-readable files. Scale then comes from processing the files into any database system, so the same design serves a trivial weekend project, personal accounting, banking, and very large systems. Requiring owners and signed chains for every use would add cost that small uses do not need.
+
+## 14. The file format is pluggable, and YAML is the first format
+
+**Chosen:** all files are YAML today. Each file declares its format and version in a header, for example `format: yaml/1`. All reading and writing goes through a codec interface. Switching to another format, such as a YAML 2 or a format not yet invented, means writing a new codec and running a migration, which is the same pattern as a schema migration. Old files stay readable by their old codec.
+
+**Rejected:** hard-wiring YAML into every part of the system.
+
+**Why:** YAML fits today for human readability, comments, appendable multi-document files, Markdown in `|` blocks without escaping, and universal parsers. The best format may change over the life of the data, and a codec keeps that change small. The exact header syntax is an open question in the [design](design.md#open-questions).

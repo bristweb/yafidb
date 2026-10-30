@@ -1,5 +1,7 @@
 # Block scalars (|) are taken literally, so nothing inside needs escaping.
 ---
+format: yaml/1
+---
 id: rec_0301
 schema: note@1
 data:

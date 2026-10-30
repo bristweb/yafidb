@@ -4,7 +4,7 @@ This document lists related projects, what each one shows, and how this design d
 
 ## Summary of the difference
 
-No project found combines all of these: **readable, appendable YAML records**, **per-record hash chaining and signing**, **stateless per-account owner writers**, **any S3-compatible bucket**, and **free and open-source software only**. Each project below covers part of that.
+No project found combines all of these: **readable, appendable record files**, **thin writers that only append and flush**, **derived databases of any kind rebuilt from the files**, **any S3-compatible store**, **optional hash chaining and signing**, and **free and open-source software only**. Each project below covers part of that.
 
 ## Tamper-evident logs and ledgers
 
@@ -27,7 +27,7 @@ These systems publish large append-only logs as static files, which is the same 
 | [Cloudflare Azul](https://blog.cloudflare.com/azul-certificate-transparency-log/) | Cloudflare's certificate transparency log built on Workers, Durable Objects, and R2 |
 | [Sigstore Rekor v2](https://blog.sigstore.dev/rekor-v2-ga/) | A tile-based transparency log for software signing |
 
-Lesson: object storage with conditional writes and a single sequencer per log works at very large scale. Those logs hold a Merkle tree for public proofs. This design uses a simpler hash chain per account because the audience is the account holder and an auditor, not the public.
+Lesson: object storage with conditional writes and a single sequencer per log works at very large scale. Those logs hold a Merkle tree for public proofs. The optional integrity pattern in this design uses a simpler hash chain per account because the audience is the account holder and an auditor, not the public.
 
 ## Peer-to-peer append-only logs
 
@@ -80,7 +80,7 @@ These provide the per-account owner.
 
 The closest cousins are audit-chain on R2 and the transparency-log family. This design differs in four ways:
 
-1. **Records are readable and appendable YAML,** not JSON lines or binary tiles.
-2. **Integrity is per record and per data type,** with optional user signatures on top of the worker's.
-3. **Writers are stateless, per-account owners** that wake per request, and cross-account actions are sagas.
-4. **It runs on any S3-compatible bucket with free and open-source parts only,** with the derived query databases rebuildable from the chains.
+1. **Records are readable and appendable files,** YAML today, not JSON lines or binary tiles. The format is pluggable through a codec.
+2. **Writers are thin.** They only check, append, and flush, and all querying comes from derived databases of any kind that are rebuildable from the files.
+3. **Integrity, owners, and sagas are optional patterns.** Integrity is per record and per data type, with optional user signatures on top of the writer's. Cross-account actions use sagas where a use case needs them.
+4. **It runs on any S3-compatible store with free and open-source parts only.**

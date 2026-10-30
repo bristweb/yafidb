@@ -26,12 +26,14 @@ This document describes the whole system: what is stored, how writes and reads w
 The system has three layers, and each layer has one job.
 
 ```mermaid
-flowchart LR
-    W[Writers<br/>thin, append and flush only] --> F[(Readable files<br/>in any S3-compatible store<br/>SOURCE OF TRUTH)]
-    F -->|process| P[Processor]
-    P --> D[(Any database engine<br/>derived, rebuildable)]
-    D --> Q[Queries, APIs,<br/>spreadsheets, reports]
+flowchart TB
+    W[Writers] --> F[(Files)]
+    F --> P[Processor]
+    P --> D[(Any database)]
+    D --> Q[Queries]
 ```
+
+The diagram reads top to bottom. Writers are thin and only append and flush. Files in any S3-compatible store are the source of truth. The processor builds a derived, rebuildable database of any engine from them. Queries, APIs, spreadsheets, and reports read from that database.
 
 1. **Files** hold the truth. A person can open any file in a text editor and read the history. All files are stored in any S3-compatible object store (a storage service that holds files and speaks Amazon's S3 protocol).
 2. **Writers** do as little as possible. They check a request, append records to a file, and flush the file to the store. They keep no database and run no queries, so they need almost no CPU and no always-on server.

@@ -19,8 +19,6 @@ Sample `yafidb.yaml` files for each template, plus one custom mix. Key names are
 
 | File | Shows |
 | --- | --- |
-| [config/yafidb.git-yaml-none.yaml](config/yafidb.git-yaml-none.yaml) | Template `git+yaml+none`: files in a git repo, no database |
-| [config/yafidb.git-yaml-sqlite.yaml](config/yafidb.git-yaml-sqlite.yaml) | Template `git+yaml+sqlite`: files in a git repo, compiled to SQLite |
 | [config/yafidb.s3-yaml-none.yaml](config/yafidb.s3-yaml-none.yaml) | Template `s3+yaml+none`: files in an S3-compatible bucket, no database |
 | [config/yafidb.s3-yaml-sqlite.yaml](config/yafidb.s3-yaml-sqlite.yaml) | Template `s3+yaml+sqlite`: files in a bucket, compiled to SQLite |
 | [config/yafidb.custom-mix.yaml](config/yafidb.custom-mix.yaml) | A custom mix with optional integrity on one data type |

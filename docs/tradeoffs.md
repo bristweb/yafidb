@@ -30,21 +30,9 @@ An immutable log conflicts with a request to delete a person's data. The answer 
 
 Records written under one model version must stay readable under later versions. That means versioned schemas plus upgrade steps on read, or occasional migrations that start new files. A migration is clean, and it becomes a long-running job at large scale.
 
-## Git as a storage backend
+## Git as a storage backend is under reconsideration
 
-Git is a supported backend for small and starter projects, with the files kept in a repository.
-
-- **Strengths:** it is free, it keeps full history, it supports pull request review, and it is easy for AI agents to work in.
-- **Limits:** many concurrent writers contend on commits, and a repository gets slower as it grows.
-- **What softens it:** move the same files to S3-compatible object storage with thin writers when write concurrency or size needs it. The files do not change in the move.
-
-## Cloudflare Artifacts is not a $0 path
-
-[Cloudflare Artifacts](https://developers.cloudflare.com/artifacts/platform/pricing/) is git-compatible versioned storage built on Durable Objects. It can be used as a storage plug-in, but it requires the Workers Paid plan, which has a $5 per month minimum. It is unavailable on the free Workers plan. It is therefore an optional example, not a happy path, and it does not meet the $0 goal.
-
-## Choosing git means accepting that it is slow
-
-YafiDB is only the file access layer, so it does not hide git's limits. Git writes are commits, which are slow and allow limited write concurrency. Repository size grows with history. A user who picks git accepts that, and can move the same files to S3-compatible storage later.
+Git was considered as a storage backend because it is free, keeps a commit log, and is easy for AI agents to work in. Its costs are slow writes, limited write concurrency, conflicts when several pushes arrive at once, repository growth, and dependence on GitHub's availability. The default is S3-compatible storage. See [Open questions](decisions.md#open-questions).
 
 ## Custom plug-ins are your responsibility
 

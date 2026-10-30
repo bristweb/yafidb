@@ -12,10 +12,16 @@ Visitors only ever load static files, so the site is fast and cheap to host. A s
 
 ```mermaid
 flowchart TB
-    F[(YafiDB files)] --> C[Compile]
-    C --> R[Site repo]
+    C[Client]
+    C -->|change| W[Worker]
+    W --> F[(YafiDB<br/>files)]
+    F --> K[Compile]
+    K --> R[Site repo]
     R --> H[Static host]
+    C -->|read| H
 ```
+
+Changes and reads take separate paths. A change goes through the worker, into the files, and through the compiler to the site. A read goes straight to the static host and never touches the worker or the files.
 
 The files stay the source of truth. The compiler reads them and writes the generated site into a repository. The static host publishes whatever is in that repository. GitHub Pages, Cloudflare Pages, or any other static host can do this.
 

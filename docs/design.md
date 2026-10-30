@@ -240,32 +240,79 @@ Rules:
 
 ```yaml
 # order/1042/2026.yaml
-yafi: { seq: 1, mode: checkpoint, schema: order@1 }
+---
 status: placed
 customer: { name: Alice, email: alice@example.com }
 shipTo: { city: Knoxville, state: TN }
 items:
   - { sku: MUG-01, qty: 2, price: 12.50 }
   - { sku: TEE-03, qty: 1, price: 20.00 }
+note: |
+  Gift for "Mom" (see {card}). Leave at the side door \n not the front.
+  Dashes --- do not end the block, and café 🎉 works too.
 carrierLog: ""
+yafi:
+  schema: order@1             # set by Yafi, not by the file
+  seq: 1
+  mode: checkpoint
+  written_at: "2026-10-29T15:02:11Z"
+  signatures:
+    - protected: eyJhbGciOiJFZDI1NTE5Iiwia2lkIjoid29ya2VyLTIwMjYtYSJ9
+      signature: 9fQk2x...     # placeholder for the base64url signature
 ---
-yafi: { seq: 2, mode: patch, base: 1, hash: 7c2e… }
 status: shipped
 tracking: 1Z999AA10123456784
+yafi:
+  schema: order@1
+  seq: 2
+  mode: patch
+  base: 1
+  hash: 7c2e...               # hash of the full rebuilt record
+  written_at: "2026-10-30T13:10:44Z"
+  signatures:
+    - protected: eyJhbGciOiJFZDI1NTE5Iiwia2lkIjoid29ya2VyLTIwMjYtYSJ9
+      signature: Lm3vQa...
 ---
-yafi: { seq: 3, mode: diff, base: 2, hash: 41ab… }
 carrierLog: |
   @@ -0,0 +1,2 @@
   +2026-10-30 09:14 Picked up, Knoxville TN
   +2026-10-30 21:02 Departed facility, Nashville TN
+yafi:
+  schema: order@1
+  seq: 3
+  mode: diff
+  base: 2
+  hash: 41ab...
+  written_at: "2026-10-31T01:05:19Z"
+  signatures:
+    - protected: eyJhbGciOiJFZDI1NTE5Iiwia2lkIjoid29ya2VyLTIwMjYtYSJ9
+      signature: Qz81kP...
 ---
-yafi: { seq: 4, mode: diff, base: 3, hash: 9f3c… }
 carrierLog: |
   @@ -2,0 +3 @@
   +2026-10-31 13:40 Delivered, front porch
+yafi:
+  schema: order@1
+  seq: 4
+  mode: diff
+  base: 3
+  hash: 9f3c...
+  written_at: "2026-10-31T17:41:02Z"
+  signatures:
+    - protected: eyJhbGciOiJFZDI1NTE5Iiwia2lkIjoid29ya2VyLTIwMjYtYSJ9
+      signature: Hd02xR...
 ---
-yafi: { seq: 5, mode: patch, base: 4, hash: d08b… }
 status: delivered
+yafi:
+  schema: order@1
+  seq: 5
+  mode: patch
+  base: 4
+  hash: d08b...
+  written_at: "2026-10-31T17:41:05Z"
+  signatures:
+    - protected: eyJhbGciOiJFZDI1NTE5Iiwia2lkIjoid29ya2VyLTIwMjYtYSJ9
+      signature: Wc7nTe...
 ```
 
 Seq 1 is the full order. Seqs 2 and 5 patch structured fields. Seqs 3 and 4 add lines to the carrier's raw log without copying the earlier lines.

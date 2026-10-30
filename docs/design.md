@@ -220,7 +220,7 @@ Writes answer one question: how do changes get into the files with the least CPU
 
 A writer does four things and nothing more.
 
-1. **Check the request.** It validates the record against its model and checks the idempotency key.
+1. **Check the request.** It validates the record against its model (see [How a write is validated](#how-a-write-is-validated)) and checks the idempotency key.
 2. **Queue the record.** It adds the record to a queue.
 3. **Flush.** On an interval or when the queue reaches a size limit, it rewrites the file with the new records using one conditional write.
 4. **Sleep.** It holds no database and runs no queries, so it can wake per request and cost nothing when idle.
@@ -304,7 +304,36 @@ Models are **language-neutral**. They use two open standards.
 - **JSON Schema** describes fields: names, types, allowed values, and required fields.
 - **CEL (Common Expression Language)** calculates derived values and, optionally, checks rules that involve more than one field. CEL is a small expression language from Google with mature implementations in Go, Java, C++, Rust, Python, and JavaScript.
 
-An engineer can use JSON Schema validation, CEL checks, or both. The system supports both and does not force a choice.
+### How a write is validated
+
+Models are what make the files a cohesive database. Without them the files are only a collection of files. Every write goes through a validate-then-write pipeline in the serverless function (the writer):
+
+1. **Look up the model** for the record's data type.
+2. **Check the fields** against the model's JSON Schema: names, types, allowed values, and required fields.
+3. **Check the rules** in the model's CEL expressions (`x-validate`), such as rules that involve more than one field.
+4. **Reject if anything fails.** An invalid record is refused and nothing is written.
+5. **Sign and chain it, if integrity is on** for this data type (see [Optional pattern: integrity](#optional-pattern-integrity)).
+6. **Write it.** The record goes into the queue and the next flush (see [Writes](#writes)).
+
+Computed values (`x-computed`) are calculated from the validated records. Official results run on the server. See [Where formulas run](#where-formulas-run).
+
+### Who decides how much is enforced
+
+The project's developer decides. YafiDB does not force a level of checking. The developer chooses:
+
+- Which JSON Schema rules to write for the fields.
+- Which CEL formulas and checks to write.
+- How strict to be. A weekend project can have light checks, and a ledger can have many.
+
+The system supports JSON Schema validation, CEL checks, or both.
+
+### Zod is likely bundled
+
+YafiDB will probably provide Zod or a similar validator out of the box, so a developer does not have to wire up validation by hand. This is likely, not promised, and the exact form is not decided. Models are still defined with JSON Schema and CEL.
+
+### Signing is optional per data type
+
+Signing and chaining happen after validation and only for data types that turn integrity on. A data type with integrity off is still validated, and its records are written as plain readable records.
 
 ### Where formulas live
 

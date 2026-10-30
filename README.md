@@ -10,13 +10,24 @@ Files on their own are only a collection of files. YafiDB reads and writes the f
 flowchart TB
     C[Client]
     C -->|change| W[Serverless<br/>functions]
-    W --> F[(Files per<br/>user or object)]
+    W --> F[(Validated<br/>files)]
     F --> K[Compile]
     K --> S[Static site<br/>or database]
     C -->|read| S
 ```
 
-There are two separate paths. To change something, a client sends a request to a serverless function; one or many can run side by side, waking only when a request arrives. The function checks the request and adds records to files in S3-compatible storage, kept separate for each user or object. A compile step then rebuilds the static site or database from the files. To read, a client skips the functions and the files and goes straight to the compiled static site or database.
+There are two separate paths. To change something, a client sends a request to a serverless function; one or many can run side by side, waking only when a request arrives. The function validates the record, signs it where integrity is enabled, and only then adds it to a file in S3-compatible storage. Files are kept separate for each user or object. A compile step then rebuilds the static site or database from the files. To read, a client skips the functions and the files and goes straight to the compiled static site or database.
+
+## How writes stay valid
+
+These are not loose YAML files. Every record is validated before it is written, and that is what makes the files a cohesive database instead of just a collection of files.
+
+- **Models define the rules.** A model is written in JSON Schema, which describes the fields, and CEL, a small expression language for computed values and checks across fields.
+- **Every write is checked.** The serverless function validates each record against its model before writing it. Where integrity is enabled, it then signs and chains the record. An invalid write is rejected, and nothing is written.
+- **The developer decides how much to enforce.** The project's developer chooses which JSON Schema rules, which CEL math and formulas, and how strict to be.
+- **A validator will probably come built in.** YafiDB will likely provide Zod or a similar validator out of the box. This is likely, not promised.
+
+See [Models in docs/design.md](docs/design.md#models) for the full pipeline.
 
 ## The defaults
 

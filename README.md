@@ -23,9 +23,10 @@ There are two separate paths. To change something, a client sends a request to a
 These are not loose YAML files. Every record is validated before it is written, and that is what makes the files a cohesive database instead of just a collection of files.
 
 - **Models define the rules.** A model is written in JSON Schema, which describes the fields, and CEL, a small expression language for computed values and checks across fields.
-- **Every write is checked.** The serverless function validates each record against its model before writing it. Where integrity is enabled, it then signs and chains the record. An invalid write is rejected, and nothing is written.
-- **The developer decides how much to enforce.** The project's developer chooses which JSON Schema rules, which CEL math and formulas, and how strict to be.
-- **A validator will probably come built in.** YafiDB will likely provide Zod or a similar validator out of the box. This is likely, not promised.
+- **Every write is checked, strictly.** Each record must pass its JSON Schema before it is written. This is required and is not optional. The serverless function validates the record, and an invalid write is rejected, so nothing is written. Where integrity is enabled for a data type, the function then signs and chains the record.
+- **The developer writes the models.** The project's developer decides what the JSON Schema says, and can add CEL computed values and extra checks.
+- **The implementation language can change.** A project can use TypeScript, Go, or another language. Models are language-neutral (JSON Schema and CEL), so every implementation must enforce the same schemas.
+- **A validator will probably come built in.** For the TypeScript implementation, YafiDB will likely provide Zod or a similar validator out of the box. This is likely, not promised.
 
 See [Models in docs/design.md](docs/design.md#models) for the full pipeline.
 

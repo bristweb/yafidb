@@ -309,27 +309,31 @@ Models are **language-neutral**. They use two open standards.
 Models are what make the files a cohesive database. Without them the files are only a collection of files. Every write goes through a validate-then-write pipeline in the serverless function (the writer):
 
 1. **Look up the model** for the record's data type.
-2. **Check the fields** against the model's JSON Schema: names, types, allowed values, and required fields.
-3. **Check the rules** in the model's CEL expressions (`x-validate`), such as rules that involve more than one field.
+2. **Check the fields** against the model's JSON Schema: names, types, allowed values, and required fields. This check is required for every record.
+3. **Check the extra rules**, if the model has any, in its CEL expressions (`x-validate`), such as rules that involve more than one field.
 4. **Reject if anything fails.** An invalid record is refused and nothing is written.
 5. **Sign and chain it, if integrity is on** for this data type (see [Optional pattern: integrity](#optional-pattern-integrity)).
 6. **Write it.** The record goes into the queue and the next flush (see [Writes](#writes)).
 
 Computed values (`x-computed`) are calculated from the validated records. Official results run on the server. See [Where formulas run](#where-formulas-run).
 
-### Who decides how much is enforced
+### Enforcement is required
 
-The project's developer decides. YafiDB does not force a level of checking. The developer chooses:
+Schema enforcement is mandatory and strict. Every record must pass its model's JSON Schema before it is written, and a record that fails is rejected. A project cannot turn this off. A data type always has a model, and the model always has a JSON Schema.
 
-- Which JSON Schema rules to write for the fields.
-- Which CEL formulas and checks to write.
-- How strict to be. A weekend project can have light checks, and a ledger can have many.
+What the developer chooses is how they write the models:
 
-The system supports JSON Schema validation, CEL checks, or both.
+- **The JSON Schema** for the fields, which says exactly what a valid record is.
+- **CEL computed values** (`x-computed`), such as formulas and totals.
+- **Extra CEL checks** (`x-validate`), such as rules across several fields.
+
+### The implementation language can change
+
+The language that runs YafiDB can be chosen to suit each project. TypeScript, Go, or another language can work. Models are language-neutral (JSON Schema and CEL), so every implementation must enforce the same schemas and give the same answer for the same record.
 
 ### Zod is likely bundled
 
-YafiDB will probably provide Zod or a similar validator out of the box, so a developer does not have to wire up validation by hand. This is likely, not promised, and the exact form is not decided. Models are still defined with JSON Schema and CEL.
+For the TypeScript implementation, YafiDB will probably provide Zod or a similar validator out of the box, so a developer does not have to wire up validation by hand. This is likely, not promised, and the exact form is not decided. Models are still defined with JSON Schema and CEL. The validator does not change the rule that every record must pass its JSON Schema.
 
 ### Signing is optional per data type
 
@@ -461,7 +465,7 @@ A very busy single account is a one-at-a-time bottleneck. The fix is to split it
 
 ## API
 
-The API is built with [Hono](https://hono.dev), which runs on Cloudflare Workers, Bun, Deno, Node, and celld, so the same code moves between hosts.
+The API in the TypeScript implementation is built with [Hono](https://hono.dev), which runs on Cloudflare Workers, Bun, Deno, Node, and celld, so the same code moves between hosts.
 
 - **REST comes first.** Routes are generated from the models. REST caches simply and is the easiest to get right.
 - **GraphQL is an optional later layer** on the same derived databases. It would not change storage or models. It brings known costs: nested queries can cause one lookup per item, so it needs batching (DataLoader style), depth and cost limits, and saved queries to restore caching. GraphQL mutations would pass through the same owners and sagas.

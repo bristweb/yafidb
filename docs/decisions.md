@@ -47,7 +47,7 @@ This log records each decision, the alternatives that were considered and reject
 
 ## 4. Models: JSON Schema plus CEL
 
-**Chosen:** JSON Schema for fields and CEL for derived values (`x-computed`) and optional cross-field checks (`x-validate`). The engineer may use either validation style or both. The project's developer decides how much to enforce, and every write is validated against its model before it is written (see [How a write is validated](design.md#how-a-write-is-validated)).
+**Chosen:** JSON Schema for fields and CEL for derived values (`x-computed`) and optional cross-field checks (`x-validate`). Schema enforcement is mandatory and strict: every record must pass its model's JSON Schema before it is written (see [How a write is validated](design.md#how-a-write-is-validated)). The engineer chooses how to write the model: the JSON Schema, plus optional CEL computed values and extra CEL checks.
 
 **Rejected, in the order they came up:**
 
@@ -58,7 +58,7 @@ This log records each decision, the alternatives that were considered and reject
 - **A separate `formulas.ts` file.** Editing is easy, but the formulas sit apart from the models they belong to, and finding one means searching "an ocean of unrelated formulas".
 - **Models as TypeScript with Zod.** Zod is good, but it ties the definition to one language. Models are meant to work from any language. Zod can still be generated from JSON Schema for TypeScript types. YafiDB will probably also provide Zod or a similar validator out of the box as a convenience. That is likely, not promised, and models are still defined with JSON Schema and CEL.
 - **JSON Logic.** Safe and cross-language, but hard to read beyond simple math.
-- **Forcing the engineer to use JSON Schema or CEL.** The engineer picks. Both are supported.
+- **Making schema checking optional.** Every record must pass its JSON Schema. CEL computed values and extra checks are optional, and the engineer chooses them.
 
 **Why CEL:** it is a standard with mature implementations in many languages. It is sandboxed by design, always finishes, and is type-checked before it runs.
 
@@ -93,7 +93,7 @@ This log records each decision, the alternatives that were considered and reject
 
 ## 9. Hono REST first, GraphQL later
 
-**Chosen:** a Hono API with REST generated from the models. GraphQL may be added later as a read layer.
+**Chosen:** for the TypeScript implementation, a Hono API with REST generated from the models. The implementation language can change per project, and every implementation must enforce the same models. GraphQL may be added later as a read layer.
 
 **Why:** Hono runs on Workers, Bun, Deno, Node, and celld. REST is simple and caches by address. GraphQL is possible but adds batching, depth limits, and caching work that is not needed first.
 

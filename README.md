@@ -51,6 +51,48 @@ yafi:
 
 In the file, the writer stores this as an indented literal block under `note: |`. A YAML library does the wrapping, so the text cannot change the structure of the file. That makes it safe to store text from a Notion-style editor, a web form, or an AI agent. The one exception is control characters such as NUL, which YAML cannot store. Escaping for display, such as sanitizing HTML, is still the job of whatever renders the text.
 
+## How changes are recorded
+
+Records are never edited. A change is a new record added to the end of the file, and every record states one of three modes:
+
+- **checkpoint**: the complete record.
+- **patch**: only the fields that changed. Fields that are left out keep their value.
+- **diff**: line changes to text fields, so text kept exactly as it was received is never copied again in full.
+
+The engineer chooses how each field is stored. Your own data usually reads best as structured YAML and changes by `patch`. Data you want exactly as you received it, like a carrier's tracking log or an API response, stays as text and changes by `diff`. Here is one order from placed to delivered:
+
+```yaml
+# order/1042/2026.yaml
+yafi: { seq: 1, mode: checkpoint, schema: order@1 }
+status: placed
+customer: { name: Alice, email: alice@example.com }
+shipTo: { city: Knoxville, state: TN }
+items:
+  - { sku: MUG-01, qty: 2, price: 12.50 }
+  - { sku: TEE-03, qty: 1, price: 20.00 }
+carrierLog: ""
+---
+yafi: { seq: 2, mode: patch, base: 1, hash: 7c2e… }
+status: shipped
+tracking: 1Z999AA10123456784
+---
+yafi: { seq: 3, mode: diff, base: 2, hash: 41ab… }
+carrierLog: |
+  @@ -0,0 +1,2 @@
+  +2026-10-30 09:14 Picked up, Knoxville TN
+  +2026-10-30 21:02 Departed facility, Nashville TN
+---
+yafi: { seq: 4, mode: diff, base: 3, hash: 9f3c… }
+carrierLog: |
+  @@ -2,0 +3 @@
+  +2026-10-31 13:40 Delivered, front porch
+---
+yafi: { seq: 5, mode: patch, base: 4, hash: d08b… }
+status: delivered
+```
+
+To get the current order, start from the checkpoint and apply each later record in order. Each change names its `base` record and carries a `hash` of the full rebuilt record, so the compile step can check the result. See [Changes in docs/design.md](docs/design.md#changes-checkpoint-patch-and-diff).
+
 ## How it works
 
 ```mermaid

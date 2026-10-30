@@ -1,0 +1,20 @@
+# Alice's side of transfer t_881. Alice's owner checks her balance first.
+# Placeholders for hashes and signatures.
+---
+id: rec_0101
+idem: req_t881_alice_pending
+schema: ledger-entry@1
+data:
+  txn: t_881
+  state: pending
+  amount: -100
+  counterparty: bob
+wrapper: { chain: ledger/alice, seq: 41, prev: "sha256:p40", hash: "sha256:p41", ts: 2026-03-02T14:00:00Z, key_id: worker-2026-a, sig: "ed25519:placeholder" }
+---
+id: rec_0102
+idem: req_t881_alice_confirm
+schema: ledger-entry@1
+data:
+  txn: t_881
+  state: confirm          # written after Bob's side succeeded. On failure this would be "reverse".
+wrapper: { chain: ledger/alice, seq: 42, prev: "sha256:p41", hash: "sha256:p42", ts: 2026-03-02T14:00:01Z, key_id: worker-2026-a, sig: "ed25519:placeholder" }

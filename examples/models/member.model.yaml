@@ -1,0 +1,20 @@
+# Related records are passed to CEL as variables, so formulas stay plain CEL.
+#   contributions      this member's contribution records, each with its computed fields
+#   all_contributions  every member's contribution records
+# sum() is the one small standard extension registered the same way in every runtime.
+$schema: https://json-schema.org/draft/2020-12/schema
+$id: member
+title: Member
+type: object
+required: [name]
+properties:
+  name:
+    type: string
+  email:
+    type: string
+x-computed:
+  total_slices: |
+    sum(contributions.map(c, c.slices))
+  pie_pct: |
+    size(contributions) == 0 ? 0.0
+    : sum(contributions.map(c, c.slices)) / sum(all_contributions.map(c, c.slices)) * 100.0

@@ -1,0 +1,34 @@
+# A model is JSON Schema (written here in YAML) plus CEL in two optional keywords.
+# x-computed: derived values, each one a CEL expression.
+# x-validate: rules that involve more than one field.
+$schema: https://json-schema.org/draft/2020-12/schema
+$id: contribution
+title: Contribution
+description: One investment or labor entry in the Slicing Pie record.
+type: object
+required: [type]
+properties:
+  type:
+    enum: [cash, time, equipment]
+  amount:
+    type: number
+    minimum: 0
+  hours:
+    type: number
+    minimum: 0
+  hourly_rate:
+    type: number
+    minimum: 0
+  note:
+    type: string
+x-computed:
+  # Multipliers (4 for cash, 2 for time) are illustrative. Changing one is an edit here.
+  slices: |
+    type == 'time' ? hours * hourly_rate * 2.0
+    : type == 'cash' ? amount * 4.0
+    : amount
+x-validate:
+  - expr: "type != 'time' || (has(hours) && has(hourly_rate))"
+    message: "Time contributions need hours and hourly_rate."
+  - expr: "type == 'time' || has(amount)"
+    message: "Cash and equipment contributions need an amount."

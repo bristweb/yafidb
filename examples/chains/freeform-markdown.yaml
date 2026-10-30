@@ -1,0 +1,28 @@
+# Block scalars (|) are taken literally, so nothing inside needs escaping.
+---
+id: rec_0301
+schema: note@1
+data:
+  title: Board decision
+  body: |
+    ## Board decision
+
+    We agreed to issue 1,000 new shares. The request payload was:
+
+    ```json
+    {"member": "alice", "shares": 1000, "memo": "line one\nline two"}
+    ```
+
+    The vesting config:
+
+    ```yaml
+    vesting:
+      cliff_months: 12
+      total_months: 48
+    ```
+
+    And the percentage calculation:
+
+    ```ts
+    const pct = (mine / total) * 100;
+    ```

@@ -15,45 +15,11 @@ YafiDB keeps records in plain files—the source of truth—and turns them into 
 - **Writes included:** many tools can read flat files with a schema, and some can export new files. YafiDB also includes the write API: a small serverless worker that takes change requests, validates them, and adds records to the files.
 - **Add complexity only when needed:** start with files, then optionally build a site or database for faster reads and richer queries.
 
-## An example record
+## An example: an order log
 
-All of a record is your data, except the `yafi` field, which Yafi reserves for itself. Records are grouped into files by person or object and by period, such as one file per year: `contribution/alice/2026.yaml`. Each data type's schema sets the format, so files do not declare one. Each record is a YAML document added to the end of the file. A record is identified by its file path and `yafi.seq`. Records are never edited in place.
+All of a record is your data, except the `yafi` field, which Yafi reserves for itself. Records are grouped into files by person or object and by period, such as one file per year: `order/1042/2026.yaml`. Each data type's schema sets the format, so files do not declare one. Each record is a YAML document added to the end of the file. A record is identified by its file path and `yafi.seq`.
 
-```yaml
-# contribution/alice/2026.yaml
----
-type: cash
-amount: 5000
-note: |
-  Approved at the "Q1 review" (issue#3), see {appendix}.
-  Quotes and backslashes \n stay as typed, and dashes --- do not end the block.
-  Ratio 3:1, and accents and emoji work too, café 🎉
-yafi:
-  schema: contribution@1       # set by Yafi, not by the file
-  seq: 1
-  written_at: "2026-01-05T15:02:11Z"
-  signatures:
-    - protected: eyJhbGciOiJFZDI1NTE5Iiwia2lkIjoid29ya2VyLTIwMjYtYSJ9
-      signature: 9fQk2x...       # placeholder for the base64url signature
-```
-
-- `yafi` is reserved for Yafi. Yafi sets everything in it and rejects any user field with that name. The writer also rejects duplicate keys, since some parsers silently keep only the last of two identical keys.
-- `yafi.schema` names the schema for this data type. The writer sets it, so a file cannot choose its own.
-- Your fields sit at the top level, as the schema defines them.
-- `yafi.seq` and `yafi.written_at` are covered by the signature, so changing either breaks it. A signature cannot show that a record was removed or reordered. That needs chaining, described below. The timestamp is the worker's claim, not independent proof of when the record was made.
-- `yafi.signatures` follows the JOSE JSON serialization (RFC 7515). Each entry's `protected` value is a base64url-encoded header that names the algorithm (`alg`) and the key (`kid`). A user who also signs their entry adds a second item to the list. The signatures are left out of the signed content, since they cannot sign themselves.
-
-**Free text goes in as typed.** The `note` field takes any text with no escaping. The same `note` in JSON needs every quote and line break escaped:
-
-```json
-{"note": "Approved at the \"Q1 review\" (issue#3), see {appendix}.\nQuotes and backslashes \\n stay as typed, and dashes --- do not end the block.\nRatio 3:1, and accents and emoji work too, café 🎉\n"}
-```
-
-In the file, the writer stores this as an indented literal block under `note: |`. A YAML library does the wrapping, so the text cannot change the structure of the file. That makes it safe to store text from a Notion-style editor, a web form, or an AI agent. The one exception is control characters such as NUL, which YAML cannot store. Escaping for display, such as sanitizing HTML, is still the job of whatever renders the text.
-
-## How changes are recorded
-
-Records are never edited. A change is a new record added to the end of the file, and every record states one of three modes:
+Records are never edited. A change is a new record, and every record states one of three modes:
 
 - **checkpoint**: the complete record.
 - **patch**: only the fields that changed. Fields that are left out keep their value.
@@ -63,35 +29,97 @@ The engineer chooses how each field is stored. Your own data usually reads best 
 
 ```yaml
 # order/1042/2026.yaml
-yafi: { seq: 1, mode: checkpoint, schema: order@1 }
+---
 status: placed
 customer: { name: Alice, email: alice@example.com }
 shipTo: { city: Knoxville, state: TN }
 items:
   - { sku: MUG-01, qty: 2, price: 12.50 }
   - { sku: TEE-03, qty: 1, price: 20.00 }
+note: |
+  Gift for "Mom" (see {card}). Leave at the side door \n not the front.
+  Dashes --- do not end the block, and café 🎉 works too.
 carrierLog: ""
+yafi:
+  schema: order@1             # set by Yafi, not by the file
+  seq: 1
+  mode: checkpoint
+  written_at: "2026-10-29T15:02:11Z"
+  signatures:
+    - protected: eyJhbGciOiJFZDI1NTE5Iiwia2lkIjoid29ya2VyLTIwMjYtYSJ9
+      signature: 9fQk2x...     # placeholder for the base64url signature
 ---
-yafi: { seq: 2, mode: patch, base: 1, hash: 7c2e… }
 status: shipped
 tracking: 1Z999AA10123456784
+yafi:
+  schema: order@1
+  seq: 2
+  mode: patch
+  base: 1
+  hash: 7c2e...               # hash of the full rebuilt record
+  written_at: "2026-10-30T13:10:44Z"
+  signatures:
+    - protected: eyJhbGciOiJFZDI1NTE5Iiwia2lkIjoid29ya2VyLTIwMjYtYSJ9
+      signature: Lm3vQa...
 ---
-yafi: { seq: 3, mode: diff, base: 2, hash: 41ab… }
 carrierLog: |
   @@ -0,0 +1,2 @@
   +2026-10-30 09:14 Picked up, Knoxville TN
   +2026-10-30 21:02 Departed facility, Nashville TN
+yafi:
+  schema: order@1
+  seq: 3
+  mode: diff
+  base: 2
+  hash: 41ab...
+  written_at: "2026-10-31T01:05:19Z"
+  signatures:
+    - protected: eyJhbGciOiJFZDI1NTE5Iiwia2lkIjoid29ya2VyLTIwMjYtYSJ9
+      signature: Qz81kP...
 ---
-yafi: { seq: 4, mode: diff, base: 3, hash: 9f3c… }
 carrierLog: |
   @@ -2,0 +3 @@
   +2026-10-31 13:40 Delivered, front porch
+yafi:
+  schema: order@1
+  seq: 4
+  mode: diff
+  base: 3
+  hash: 9f3c...
+  written_at: "2026-10-31T17:41:02Z"
+  signatures:
+    - protected: eyJhbGciOiJFZDI1NTE5Iiwia2lkIjoid29ya2VyLTIwMjYtYSJ9
+      signature: Hd02xR...
 ---
-yafi: { seq: 5, mode: patch, base: 4, hash: d08b… }
 status: delivered
+yafi:
+  schema: order@1
+  seq: 5
+  mode: patch
+  base: 4
+  hash: d08b...
+  written_at: "2026-10-31T17:41:05Z"
+  signatures:
+    - protected: eyJhbGciOiJFZDI1NTE5Iiwia2lkIjoid29ya2VyLTIwMjYtYSJ9
+      signature: Wc7nTe...
 ```
 
-To get the current order, start from the checkpoint and apply each later record in order. Each change names its `base` record and carries a `hash` of the full rebuilt record, so the compile step can check the result. See [Changes in docs/design.md](docs/design.md#changes-checkpoint-patch-and-diff).
+To get the current order, start from the checkpoint and apply each later record in order. See [Changes in docs/design.md](docs/design.md#changes-checkpoint-patch-and-diff).
+
+- `yafi` is reserved for Yafi. Yafi sets everything in it and rejects any user field with that name. The writer also rejects duplicate keys, since some parsers silently keep only the last of two identical keys.
+- `yafi.schema` names the schema for this data type. The writer sets it, so a file cannot choose its own.
+- `yafi.mode` is required on every record and is never assumed. `patch` and `diff` records also carry `yafi.base`, the `seq` they build on, and `yafi.hash`, a hash of the full rebuilt record that the compile step checks.
+- Your fields sit at the top level, as the schema defines them.
+- `yafi.seq`, `yafi.mode`, `yafi.base`, `yafi.hash` and `yafi.written_at` are covered by the signature, so changing any of them breaks it. A signature cannot show that a record was removed or reordered. That needs chaining, described below. The timestamp is the worker's claim, not independent proof of when the record was made.
+- `yafi.signatures` follows the JOSE JSON serialization (RFC 7515). Each entry's `protected` value is a base64url-encoded header that names the algorithm (`alg`) and the key (`kid`). A user who also signs their entry adds a second item to the list. The signatures are left out of the signed content, since they cannot sign themselves.
+
+**Free text goes in as typed.** The `note` field takes any text with no escaping. The same `note` in JSON needs every quote and line break escaped:
+
+```json
+{"note": "Gift for \"Mom\" (see {card}). Leave at the side door \\n not the front.\nDashes --- do not end the block, and café 🎉 works too.\n"}
+```
+
+In the file, the writer stores this as an indented literal block under `note: |`. A YAML library does the wrapping, so the text cannot change the structure of the file. That makes it safe to store text from a Notion-style editor, a web form, or an AI agent. The one exception is control characters such as NUL, which YAML cannot store. Escaping for display, such as sanitizing HTML, is still the job of whatever renders the text.
 
 ## How it works
 

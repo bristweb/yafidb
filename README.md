@@ -29,9 +29,9 @@ customer: { name: Alice, email: alice@example.com }
 items:
   - { sku: MUG-01, qty: 2, price: 12.50 }
 note: |
-  Approved at the "Q1 review" (issue#3), see {appendix}.
-  Quotes and backslashes \n stay as typed, and dashes --- do not end the block.
-  Ratio 3:1, and accents and emoji work too, café 🎉
+  Gift message: "Happy 60th, Mom!" Love, José & Ana 🎉
+  Leave at the side door --- not the front (dog #2 bites).
+  Sorry it's late :\ wrap it in {blue} paper if you can.
 carrierLog: ""
 yafi:
   id: 1
@@ -76,7 +76,7 @@ yafi:
 **Free text goes in as typed.** The `note` field takes any text with no escaping. The same `note` in JSON needs every quote and line break escaped:
 
 ```json
-{"note": "Approved at the \"Q1 review\" (issue#3), see {appendix}.\nQuotes and backslashes \\n stay as typed, and dashes --- do not end the block.\nRatio 3:1, and accents and emoji work too, café 🎉\n"}
+{"note": "Gift message: \"Happy 60th, Mom!\" Love, José & Ana 🎉\nLeave at the side door --- not the front (dog #2 bites).\nSorry it's late :\\ wrap it in {blue} paper if you can.\n"}
 ```
 
 In the file, the writer stores this as an indented literal block under `note: |`. A YAML library does the wrapping, so the text cannot change the structure of the file. That makes it safe to store text from a Notion-style editor, a web form, or an AI agent. The one exception is control characters such as NUL, which YAML cannot store. Escaping for display, such as sanitizing HTML, is still the job of whatever renders the text.

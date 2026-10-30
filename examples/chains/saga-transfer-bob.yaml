@@ -1,0 +1,11 @@
+# Bob's side of transfer t_881. Bob's owner is a different actor from Alice's.
+---
+id: rec_0201
+idem: req_t881_bob_apply
+schema: ledger-entry@1
+data:
+  txn: t_881
+  state: apply
+  amount: 100
+  counterparty: alice
+wrapper: { chain: ledger/bob, seq: 17, prev: "sha256:q16", hash: "sha256:q17", ts: 2026-03-02T14:00:00Z, key_id: worker-2026-a, sig: "ed25519:placeholder" }

@@ -1,0 +1,22 @@
+# First record of a new chain created by a schema migration.
+# It names the old chain and its last hash, so history is linked, not rewritten.
+---
+id: rec_genesis
+schema: genesis@1
+data:
+  migrated_from:
+    chain: contribution/alice
+    last_seq: 214
+    last_hash: "sha256:old-chain-head-placeholder"
+  from_schema: contribution@1
+  to_schema: contribution@2
+  script: migrations/contribution-1-to-2   # deterministic and reproducible
+  script_hash: "sha256:script-placeholder"
+wrapper:
+  chain: contribution/alice@2
+  seq: 1
+  prev: "sha256:old-chain-head-placeholder"
+  hash: "sha256:genesis-placeholder"
+  ts: 2027-01-01T00:00:00Z
+  key_id: worker-2027-a
+  sig: "ed25519:placeholder"

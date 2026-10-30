@@ -1,0 +1,42 @@
+# chains/contribution/alice/2026.yaml
+# Each document is one record. "wrapper" is written and signed by the owner (worker).
+# "user_sig" is optional and proves the user asked for the action.
+# Hash and signature values are placeholders.
+---
+id: rec_0001
+idem: req_7f3a            # idempotency key: a retry with the same key is ignored
+schema: contribution@1    # schema name and version
+data:
+  type: cash
+  amount: 5000
+  note: |
+    Initial investment, wired 2026-01-05.
+wrapper:
+  chain: contribution/alice
+  seq: 1
+  prev: "0000000000000000000000000000000000000000000000000000000000000000"  # genesis
+  hash: "sha256:aaaa...placeholder"
+  ts: 2026-01-05T15:02:11Z
+  key_id: worker-2026-a
+  sig: "ed25519:worker-sig-placeholder"
+user_sig:
+  key_id: alice-2026
+  sig: "ed25519:alice-sig-placeholder"
+---
+id: rec_0002
+idem: req_9b21
+schema: contribution@1
+data:
+  type: time
+  hours: 12
+  hourly_rate: 100
+  note: |
+    Built the first prototype.
+wrapper:
+  chain: contribution/alice
+  seq: 2
+  prev: "sha256:aaaa...placeholder"   # hash of rec_0001
+  hash: "sha256:bbbb...placeholder"
+  ts: 2026-01-09T20:41:55Z
+  key_id: worker-2026-a
+  sig: "ed25519:worker-sig-placeholder-2"

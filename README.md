@@ -17,7 +17,7 @@ YafiDB keeps records in plain files—the source of truth—and turns them into 
 
 ## An example record
 
-All of a record is your data, except the `yafi` field, which Yafi reserves for itself. Records are grouped into files by person or object and by period, such as one file per year: `order/1042/2026.yaml`. Each data type's schema sets the format, so files do not declare one. Each record is a YAML document added to the end of the file. A record is identified by its file path and `yafi.seq`. Records are never edited in place.
+All of a record is your data, except the `yafi` field, which Yafi reserves for itself. Records are grouped into files by person or object and by period, such as one file per year: `order/1042/2026.yaml`. Each data type's schema sets the format, so files do not declare one. Each record is a YAML document added to the end of the file. A record is identified by its file path and `yafi.id`. Records are never edited in place.
 
 ```yaml
 # order/1042/2026.yaml
@@ -33,10 +33,10 @@ note: |
 carrierLog: ""
 yafi:
   schema: order@1       # set by Yafi, not by the file
-  seq: 1
+  id: 1
   mode:
     type: checkpoint
-    base: 0
+    from: 0
   written_at: "2026-10-29T15:02:11Z"
   signatures:
     - protected: eyJhbGciOiJFZDI1NTE5Iiwia2lkIjoid29ya2VyLTIwMjYtYSJ9
@@ -46,10 +46,10 @@ status: shipped
 tracking: 1Z999AA10123456784
 yafi:
   schema: order@1
-  seq: 2
+  id: 2
   mode:
     type: patch
-    base: 1
+    from: 1
   written_at: "2026-10-30T13:10:44Z"
   signatures: [...]
 ---
@@ -59,19 +59,19 @@ carrierLog: |
   +2026-10-30 21:02 Departed facility, Nashville TN
 yafi:
   schema: order@1
-  seq: 3
+  id: 3
   mode:
     type: diff
-    base: 2
+    from: 2
   written_at: "2026-10-31T01:05:19Z"
   signatures: [...]
 ```
 
 - `yafi` is reserved for Yafi. Yafi sets everything in it and rejects any user field with that name. The writer also rejects duplicate keys, since some parsers silently keep only the last of two identical keys.
-- `yafi.mode.type` is `checkpoint` (the full record), `patch` (only changed fields) or `diff` (line changes to a text field). Every record gives the `seq` it builds on in `yafi.mode.base`; the first checkpoint uses `base: 0`.
+- `yafi.mode.type` is `checkpoint` (the full record), `patch` (only changed fields) or `diff` (line changes to a text field). Every record gives the `id` it builds on in `yafi.mode.from`; the first checkpoint uses `from: 0`.
 - `yafi.schema` names the schema for this data type. The writer sets it, so a file cannot choose its own.
 - Your fields sit at the top level, as the schema defines them.
-- `yafi.seq` and `yafi.written_at` are covered by the signature, so changing either breaks it. A signature cannot show that a record was removed or reordered. That needs chaining, described below. The timestamp is the worker's claim, not independent proof of when the record was made.
+- `yafi.id` and `yafi.written_at` are covered by the signature, so changing either breaks it. A signature cannot show that a record was removed or reordered. That needs chaining, described below. The timestamp is the worker's claim, not independent proof of when the record was made.
 - `yafi.signatures` follows the JOSE JSON serialization (RFC 7515). Each entry's `protected` value is a base64url-encoded header that names the algorithm (`alg`) and the key (`kid`). A user who also signs their entry adds a second item to the list. The signatures are left out of the signed content, since they cannot sign themselves.
 
 **Free text goes in as typed.** The `note` field takes any text with no escaping. The same `note` in JSON needs every quote and line break escaped:

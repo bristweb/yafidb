@@ -1,12 +1,18 @@
 # YafiDB
 
-YafiDB is a database that stores its records as plain files. The files are the source of truth. Anything built from them, such as a static website, a scalable database, or a file in another format, is derived, so you can delete it and rebuild it from the files at any time.
+**A database you can read, diff, and rebuild.**
 
-> **Status:** design stage. This repository holds the design and examples. There is no code yet, and all names are illustrative.
+YafiDB keeps records in plain files—the source of truth—and turns them into whatever a project needs: a static site, a queryable database, or another format. Files stay portable and easy to inspect; derived outputs can be deleted and rebuilt at any time.
 
-## Why files?
+> **Status: design stage.** This repository contains the design and examples, not working software. Names and interfaces are illustrative.
 
-Plain files are easy to read, diff, back up, and hand to an AI assistant. Their weakness is that nothing stops a bad or conflicting edit. YafiDB fills that gap. It checks every write against its schema, and it can compile the files into other outputs, such as a scalable database, when a project needs them.
+**Explore:** [Design overview](docs/design.md) · [Examples](examples/) · [Configuration](docs/configuration.md)
+
+### Why YafiDB?
+
+- **Keep data understandable:** records are ordinary files you can read, diff, back up, or work with using an AI assistant.
+- **Catch bad edits:** every write is checked against the schema you define.
+- **Add complexity only when needed:** start with files, then optionally build a site or database for faster reads and richer queries.
 
 ## An example record
 
@@ -114,7 +120,8 @@ YafiDB is made of parts you can swap to fit your infrastructure. Each part has a
 | **Chaining** | Off | On, linking each record to the previous one, per data type |
 | **Derived output** | None | A static site, SQLite (a single-file SQL database), a scalable database, or another format |
 | **Where the writer runs** | Serverless function | Another serverless host, or none for Git-only sites |
-The writer is written in TypeScript or JavaScript, so it runs as a serverless function on Node or Bun, with no separate server. Schemas are language-neutral, so they apply the same way whatever runs them.
+
+The writer is designed for TypeScript or JavaScript on Node or Bun, with no separate server. Schemas are language-neutral, so they apply the same way whatever runs them.
 
 Templates such as `s3+yaml+none` set the storage, format, and derived-output parts for you. A weekend project might use serverless functions, object storage, and no derived output. A ledger that moves money might add chaining and a dedicated database. The files stay the same in both. See [docs/configuration.md](docs/configuration.md).
 

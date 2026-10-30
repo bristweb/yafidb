@@ -1,30 +1,34 @@
-# Block scalars (|) are taken literally, so nothing inside needs escaping.
+# One note record. Text sits in top-level fields as a literal block (|), so Markdown,
+# JSON, YAML, and code need no escaping. Yafi's own fields sit under yafi.
 ---
-format: yaml/1
----
-id: rec_0301
-schema: note@1
-data:
-  title: Board decision
-  body: |
-    ## Board decision
+title: Board decision
+body: |
+  ## Board decision
 
-    We agreed to issue 1,000 new shares. The request payload was:
+  We agreed to issue 1,000 new shares. The request payload was:
 
-    ```json
-    {"member": "alice", "shares": 1000, "memo": "line one\nline two"}
-    ```
+  ```json
+  {"member": "alice", "shares": 1000, "memo": "line one\nline two"}
+  ```
 
-    The vesting config:
+  The vesting config:
 
-    ```yaml
-    vesting:
-      cliff_months: 12
-      total_months: 48
-    ```
+  ```yaml
+  vesting:
+    cliff_months: 12
+    total_months: 48
+  ```
 
-    And the percentage calculation:
+  And the percentage calculation:
 
-    ```ts
-    const pct = (mine / total) * 100;
-    ```
+  ```ts
+  const pct = (mine / total) * 100;
+  ```
+yafi:
+  schema: note@1
+  seq: 1
+  written_at: "<RFC 3339 timestamp set by the writer>"
+  signatures:
+    # Placeholders, not real signatures.
+    - protected: "<base64url protected header>"
+      signature: "<base64url signature>"

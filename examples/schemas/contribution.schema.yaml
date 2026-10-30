@@ -1,8 +1,10 @@
-# A model is JSON Schema (written here in YAML) plus CEL in two optional keywords.
+# A schema is JSON Schema (written here in YAML) plus CEL in two optional keywords.
+# x-format: the record format for this data type.
 # x-computed: derived values, each one a CEL expression.
 # x-validate: rules that involve more than one field.
 $schema: https://json-schema.org/draft/2020-12/schema
 $id: contribution
+x-format: yaml/1
 title: Contribution
 description: One investment or labor entry in the Slicing Pie record.
 type: object

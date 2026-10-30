@@ -1,88 +1,76 @@
 # Configuration
 
-This document explains how a YafiDB project chooses its file format, its storage, and whether its files are compiled into a database. All key names and template names here are illustrative, because no code exists yet.
+This document explains the parts of a YafiDB project that you can choose, and how to set them in `yafidb.yaml`. All key names and template names here are illustrative, because no code exists yet.
 
 ## What is configurable
 
-Each project has one configuration file, called `yafidb.yaml` in these examples. It has one section for each of three parts.
+Each project has one configuration file, called `yafidb.yaml` in these examples. These are the configurable parts. Each has a default.
 
-- **Format:** how records are written in a file. The default is YAML. The focus today is YAML, and other formats may be adopted in the future.
-- **Storage:** where the files live. The default is any S3-compatible storage.
-- **Compile:** whether the files are compiled into something else. The default is none, or a SQLite database. A fully static website is another compile target. See [Static site](static-site.md).
+- **Record format:** how records are written in a file. Each data type's schema sets it with `x-format`. YAML today. Other formats only if someone builds them.
+- **Storage:** where the files live. Any object storage, such as Amazon S3 or Cloudflare R2. Git for Git-only sites.
+- **Schema language:** how each schema is written. JSON Schema, with CEL for computed values and checks.
+- **Signing:** the algorithm that signs each record. Ed25519 by default. Other JOSE algorithms can be named by their `alg` value. A shared-secret option such as HS256 cannot prove who wrote a record.
+- **Chaining:** whether a data type's records link to the one before. Off by default. Turn it on per data type.
+- **Derived output:** what is built from the files. None by default. A static site, SQLite, a scalable database, or another format. See [Static site](static-site.md).
+- **Where the writer runs:** a serverless function, another serverless host, or none for Git-only sites.
 
-Each part is configured on its own. A choice for one part does not limit the other two. More options may be added in the future.
-
-Optional features, such as signed history, are turned on in the same file, per project or per data type. See [Design](design.md).
+Write coordination is not a setting. It is an open design decision.
 
 ## Templates
 
-A **template** is a named starting point that fills in the three sections for you. You can start from a template and change any part afterward.
+A **template** is a named starting point. It fills in storage and derived output, and it names the record format that the schemas use. You can start from a template and change any part afterward.
 
-| Template | Format | Storage | Compile |
+| Template | Storage | Format | Derived output |
 | --- | --- | --- | --- |
-| `s3+yaml+none` | YAML | S3-compatible | None |
-| `s3+yaml+sqlite` | YAML | S3-compatible | SQLite |
+| `s3+yaml+none` | S3-compatible object storage | YAML | None |
+| `s3+yaml+sqlite` | S3-compatible object storage | YAML | SQLite |
 
 The repository has an example config for each template in [examples/config/](../examples/config/).
 
 ## An example config
 
-This is the config for the `s3+yaml+none` template.
+This is the config for the `s3+yaml+none` template. It has no format key, because each data type's schema sets its record format with `x-format`, such as `x-format: yaml/1`.
 
 ```yaml
 # yafidb.yaml (key names are illustrative)
 template: s3+yaml+none
-format:
-  type: yaml
-  version: 1
 storage:
-  type: s3
+  type: s3                       # any object storage
   bucket: my-records
   endpoint: https://example.r2.cloudflarestorage.com
-compile:
+signing:
+  alg: Ed25519                   # default
+chaining:
+  data_types: []                 # off by default. List a data type to turn it on
+derived_output:
   type: none
+writer:
+  runs_on: serverless            # a serverless function
 ```
 
-This is a project that chose its own mix: S3-compatible storage, YAML, a SQLite database, and signed history on one data type.
+Other mixes, such as SQLite as derived output with chaining on one data type, are in [examples/config/](../examples/config/).
 
-```yaml
-# yafidb.yaml (key names are illustrative)
-format:
-  type: yaml
-  version: 1
-storage:
-  type: s3
-  bucket: ledger-records
-  endpoint: https://example.r2.cloudflarestorage.com
-compile:
-  type: sqlite
-  output: derived/ledger.sqlite
-features:
-  integrity:
-    data_types: [contribution]   # hash chain and signatures for this type only
-```
+## What each part must provide
 
-## Plug-in interfaces
+This section describes what the record format, storage, and derived output must provide, at the interface level only. The design does not yet define code. Each part talks to the others only through these requirements, so a part can be replaced without changing the others.
 
-Each of the three parts is a **plug-in**. This section describes what each plug-in type must provide, at the interface level only. The design does not yet define code. Because each part talks to the others only through these interfaces, a part can be replaced without changing the other two.
+**A record format must provide:**
 
-**A format codec must provide:**
-
-- A name and version, such as `yaml/1`, that files declare in their header.
-- A way to read a file's bytes into records, including reading the header.
+- A name and version, such as `yaml/1`, that each data type's schema sets with `x-format`. Files do not declare their own format.
+- A way to read a file's bytes into records.
 - A way to write records into bytes.
-- A way to add records to the end of existing file content.
+- A way to add records to the end of existing file content. Records are separated by `---`, and a file has no header document.
 
-**A storage backend must provide:**
+**Storage must provide:**
 
 - A way to list the files under a path.
-- A way to read a file and get back a version tag that identifies that exact content.
-- A way to write a file only if its version tag is unchanged, so two writers cannot overwrite each other. For S3-compatible storage this is a conditional write.
-- Optionally, a way to announce that a file changed, so a compiler can run.
+- A way to read a file.
+- A way to write a file.
+- Optionally, a way to announce that a file changed, so compile can run.
 
-**A compiler must provide:**
+**Derived output must provide:**
 
-- A name for the database engine and a place to write its output.
-- A way to build the whole database from scratch from all the files, so a lost database can always be rebuilt.
-- Optionally, a way to update the database from only the files that changed.
-- A promise never to change the files. The database is derived and the files stay the source of truth.
+- A name for the output, such as a static site or SQLite, and a place to write it.
+- A way to build the whole output from scratch from all the files, so it can always be deleted and rebuilt.
+- Optionally, a way to update the output from only the files that changed.
+- A promise never to change the files. The derived output is built from them, and the files stay the source of truth.

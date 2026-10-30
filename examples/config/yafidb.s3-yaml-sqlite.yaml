@@ -1,13 +1,16 @@
 # s3+yaml+sqlite
 # Key names are illustrative. No code exists yet.
 template: s3+yaml+sqlite
-format:
-  type: yaml
-  version: 1
 storage:
   type: s3
   bucket: my-records
   endpoint: https://example.r2.cloudflarestorage.com
-compile:
+signing:
+  alg: Ed25519
+chaining:
+  data_types: []
+derived_output:
   type: sqlite
   output: derived/app.sqlite
+writer:
+  runs_on: serverless

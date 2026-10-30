@@ -1,44 +1,35 @@
-# chains/contribution/alice/2026.yaml
-# Each document is one record. "wrapper" is written and signed by the owner (worker).
-# "user_sig" is optional and proves the user asked for the action.
-# Hash and signature values are placeholders.
+# Chain contribution/alice, year 2026. Each record is a YAML document, separated by ---.
+# User fields are top-level. Yafi's own fields sit under yafi.
+# A user who also signs adds a second entry to signatures.
 ---
-format: yaml/1
----
-id: rec_0001
-idem: req_7f3a            # idempotency key: a retry with the same key is ignored
-schema: contribution@1    # schema name and version
-data:
-  type: cash
-  amount: 5000
-  note: |
-    Initial investment, wired 2026-01-05.
-wrapper:
-  chain: contribution/alice
+type: cash
+amount: 5000
+note: |
+  Initial investment, wired 2026-01-05.
+yafi:
+  schema: contribution@1
   seq: 1
-  prev: "0000000000000000000000000000000000000000000000000000000000000000"  # genesis
-  hash: "sha256:aaaa...placeholder"
-  ts: 2026-01-05T15:02:11Z
-  key_id: worker-2026-a
-  sig: "ed25519:worker-sig-placeholder"
-user_sig:
-  key_id: alice-2026
-  sig: "ed25519:alice-sig-placeholder"
+  written_at: "2026-01-05T15:02:11Z"
+  idem: req_7f3a            # idempotency key: a retry with the same key is ignored
+  prev: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"  # all zeros: no previous record
+  signatures:
+    # Placeholders, not real signatures. The protected headers name kid worker-2026-a and alice-2026.
+    - protected: "<base64url protected header>"
+      signature: "<base64url signature>"
+    - protected: "<base64url protected header>"
+      signature: "<base64url signature>"
 ---
-id: rec_0002
-idem: req_9b21
-schema: contribution@1
-data:
-  type: time
-  hours: 12
-  hourly_rate: 100
-  note: |
-    Built the first prototype.
-wrapper:
-  chain: contribution/alice
+type: time
+hours: 12
+hourly_rate: 100
+note: |
+  Built the first prototype.
+yafi:
+  schema: contribution@1
   seq: 2
-  prev: "sha256:aaaa...placeholder"   # hash of rec_0001
-  hash: "sha256:bbbb...placeholder"
-  ts: 2026-01-09T20:41:55Z
-  key_id: worker-2026-a
-  sig: "ed25519:worker-sig-placeholder-2"
+  written_at: "2026-01-09T20:41:55Z"
+  idem: req_9b21
+  prev: "<base64url SHA-256 of seq 1>"
+  signatures:
+    - protected: "<base64url protected header>"
+      signature: "<base64url signature>"

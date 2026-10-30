@@ -4,6 +4,7 @@
 # sum() is the one small standard extension registered the same way in every runtime.
 $schema: https://json-schema.org/draft/2020-12/schema
 $id: member
+x-format: yaml/1
 title: Member
 type: object
 required: [name]

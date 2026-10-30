@@ -1,22 +1,30 @@
-# Alice's side of transfer t_881. Alice's owner checks her balance first.
-# Placeholders for hashes and signatures.
+# Saga approach: under consideration for write coordination, not a settled design.
+# Chain ledger/alice. Alice's side of transfer t_881. Alice's owner checks her balance first.
+# User fields are top-level. Yafi's own fields sit under yafi.
 ---
-format: yaml/1
+txn: t_881
+state: pending
+amount: -100
+counterparty: bob
+yafi:
+  schema: ledger-entry@1
+  seq: 41
+  written_at: "2026-03-02T14:00:00Z"
+  idem: req_t881_alice_pending
+  prev: "<base64url SHA-256 of seq 40>"
+  signatures:
+    # Placeholders, not real signatures. The protected header names kid worker-2026-a.
+    - protected: "<base64url protected header>"
+      signature: "<base64url signature>"
 ---
-id: rec_0101
-idem: req_t881_alice_pending
-schema: ledger-entry@1
-data:
-  txn: t_881
-  state: pending
-  amount: -100
-  counterparty: bob
-wrapper: { chain: ledger/alice, seq: 41, prev: "sha256:p40", hash: "sha256:p41", ts: 2026-03-02T14:00:00Z, key_id: worker-2026-a, sig: "ed25519:placeholder" }
----
-id: rec_0102
-idem: req_t881_alice_confirm
-schema: ledger-entry@1
-data:
-  txn: t_881
-  state: confirm          # written after Bob's side succeeded. On failure this would be "reverse".
-wrapper: { chain: ledger/alice, seq: 42, prev: "sha256:p41", hash: "sha256:p42", ts: 2026-03-02T14:00:01Z, key_id: worker-2026-a, sig: "ed25519:placeholder" }
+txn: t_881
+state: confirm          # written after Bob's side succeeded. On failure this would be "reverse".
+yafi:
+  schema: ledger-entry@1
+  seq: 42
+  written_at: "2026-03-02T14:00:01Z"
+  idem: req_t881_alice_confirm
+  prev: "<base64url SHA-256 of seq 41>"
+  signatures:
+    - protected: "<base64url protected header>"
+      signature: "<base64url signature>"

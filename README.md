@@ -138,6 +138,7 @@ New to YafiDB? Start with [docs/design.md](docs/design.md), then browse [example
 | [docs/decisions.md](docs/decisions.md) | What was decided, what was rejected, and why |
 | [docs/tradeoffs.md](docs/tradeoffs.md) | The real costs and risks |
 | [docs/prior-art.md](docs/prior-art.md) | Related projects and what each one teaches |
+| [docs/comparison.md](docs/comparison.md) | How YafiDB compares with more than 50 other tools, and when to pick one of them instead |
 | [examples/](examples/) | Sample config, record, and schema files |
 
 *YafiDB stands for "Yet Another File Database".*

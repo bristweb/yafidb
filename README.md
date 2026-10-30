@@ -9,14 +9,16 @@ A design for a database whose source of truth is a set of human-readable files. 
 Human-readable files are the source of truth. A writer does as little as possible: it checks a request, appends records to a file, and flushes the file to any S3-compatible object store (a storage service that holds files and speaks Amazon's S3 protocol). A processor then turns those files into whatever database engine the use case needs, such as SQLite, DuckDB, Parquet, or a server database. Those databases are derived, so any of them can be deleted and rebuilt from the files. Because the files stay simple and the database engine is your choice, the same design works for a weekend project, personal accounting, a bank, or a very large system.
 
 ```mermaid
-flowchart LR
-    W[Writers<br/>thin, append and flush only] --> F[(Readable files<br/>in any S3-compatible store<br/>SOURCE OF TRUTH)]
-    F -->|process| P[Processor]
-    P --> D[(Any database engine<br/>derived, rebuildable)]
-    D --> Q[Queries, APIs,<br/>spreadsheets, reports]
+flowchart TB
+    W[Writers] --> F[(Files)]
+    F --> P[Processor]
+    P --> D[(Any database)]
+    D --> Q[Queries]
 ```
 
-The files hold the truth. The writers keep no database and run no queries, so they need almost no CPU and no always-on server. The processor and the derived databases carry the query and scale load, and they can be as small or as large as the use case needs.
+The diagram reads top to bottom. Writers are thin and only append and flush. Files in any S3-compatible store are the source of truth. The processor builds a derived, rebuildable database of any engine from them. Queries, APIs, spreadsheets, and reports read from that database.
+
+The writers keep no database and run no queries, so they need almost no CPU and no always-on server. The processor and the derived databases carry the query and scale load, and they can be as small or as large as the use case needs.
 
 ## Range
 

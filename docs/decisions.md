@@ -6,7 +6,7 @@ This log records each decision, the alternatives that were considered and reject
 
 | # | Decision | Chosen | Main rejected alternative |
 | --- | --- | --- | --- |
-| 1 | Storage backend | Readable files, in git for small projects and in S3-compatible storage for scale | Git as the only backend |
+| 1 | Storage backend | S3-compatible storage as the default. Git as a storage backend is an open question | Git as the only backend |
 | 2 | Storage format | Append-only multi-document YAML (today) | A relational database |
 | 3 | Integrity | Optional pattern: hash chain plus Ed25519 signatures | Always-on, or none |
 | 4 | Model language | JSON Schema plus CEL | HyperFormula, custom language, SQL, formulas.ts |
@@ -20,14 +20,16 @@ This log records each decision, the alternatives that were considered and reject
 | 12 | Privacy deletion | Per-user encryption keys | Deleting bytes |
 | 13 | Core idea | Readable files as truth, any database derived from them | Defining the system as one chain per entity |
 | 14 | File format | Pluggable through a codec, YAML first | Hard-wiring YAML |
-| 15 | Core goals | AI-easy start, $0 cost, optional databases, pluggable storage by stage | A fixed storage and database stack |
-| 16 | Composition | Three independent plug-in parts chosen in one config, with templates and happy paths | A fixed stack, or a single bundled backend |
+| 15 | Core goals | AI-easy start, $0 cost, optional databases, composable | A fixed storage and database stack |
+| 16 | Composition | Three independent configurable parts chosen in one config, with defaults and templates | A fixed stack, or a single bundled backend |
 
-## 1. Storage backend: git for small projects, object storage for scale
+## 1. Storage backend: S3-compatible storage by default, git under reconsideration
+
+**Status:** git as a storage backend is under reconsideration. See [Open questions](#open-questions). The history below is kept as written.
 
 **Chosen:** the readable files are the source of truth, and the backend is pluggable by stage. Small and starter projects keep the files in a git repository. Projects that need write concurrency or scale keep them in S3-compatible object storage with thin writers. The files are the same in both.
 
-**Rejected:** git as the only backend. An earlier version of this decision dropped git entirely, and this entry revises it: git is now a supported backend for the starter stage. Decision 16 makes the backend one of three plug-in parts.
+**Rejected:** git as the only backend. An earlier version of this decision dropped git entirely, and this entry revises it: git is now a supported backend for the starter stage. Decision 16 makes the backend one of three configurable parts. Since then, git as a storage backend has become an open question, and the default is S3-compatible storage only.
 
 **Why:** git is free, keeps history, supports pull request review, and is easy for AI agents to work in, so it is the cheapest start. It is a poor fit for many concurrent writers, because writes are whole-repository commits and there is no per-account serialization, and repository size can grow without bound. Object storage gives conditional writes, cheap storage, event notifications, and files that any tool can read. The optional hash chain and signatures provide tamper evidence where a use case needs them. Git is also still used for code and model files.
 
@@ -123,37 +125,45 @@ This log records each decision, the alternatives that were considered and reject
 
 ## 14. The file format is pluggable, and YAML is the first format
 
-**Chosen:** all files are YAML today. Each file declares its format and version in a header, for example `format: yaml/1`. All reading and writing goes through a codec interface. Switching to another format, such as a YAML 2 or a format not yet invented, means writing a new codec and running a migration, which is the same pattern as a schema migration. Old files stay readable by their old codec.
+**Chosen:** all files are YAML today. Each file declares its format and version in a header, for example `format: yaml/1`. All reading and writing goes through a codec interface. Switching to another format,, means writing a new codec and running a migration, which is the same pattern as a schema migration. Old files stay readable by their old codec.
 
 **Rejected:** hard-wiring YAML into every part of the system.
 
 **Why:** YAML fits today for human readability, comments, appendable multi-document files, Markdown in `|` blocks without escaping, and universal parsers. The best format may change over the life of the data, and a codec keeps that change small. The exact header syntax is an open question in the [design](design.md#open-questions).
 
-## 15. Core goals: easy for AI, $0, optional databases, pluggable storage
+## 15. Core goals: easy for AI, $0, optional databases, composable
 
 **Chosen:** YafiDB ("Yet Another File DB", a nod to YAML files) is built around four goals.
 
 1. **Very easy for AI agents to spin up new projects.** A project is files plus model definitions that an AI can generate and read, with no infrastructure to provision.
 2. **$0 cost for most any project.**
 3. **Infinite scaling through optional database writing.** Derived databases are opt-in.
-4. **Pluggable storage by stage.** The same files can live in a git repository, move to S3-compatible object storage, or be compiled into any database.
+4. **Composable.** The file format, the storage, and the compilation are each configurable. An earlier wording of this goal was "pluggable storage by stage", with files moving from a git repository to S3-compatible storage. Git as storage is now an open question.
 
 **Rejected:** a fixed storage and database stack that every project must provision.
 
-**Why:** these goals come from the owner. Files plus models are something an AI can write without setting up servers, so starting is fast and free. Scale is added later by choosing a database, not by rewriting data. This is why decision 1 supports git as a starting backend.
+**Why:** these goals come from the owner. Files plus models are something an AI can write without setting up servers, so starting is fast and free. Scale is added later by choosing a database, not by rewriting data. 
 
-## 16. Composable configuration: three plug-in parts, templates, and happy paths
+## 16. Composable configuration: three configurable parts, defaults, and templates
 
-**Chosen:** YafiDB is only a file access layer. It has three independent, pluggable parts, each chosen in one configuration file (illustratively `yafidb.yaml`): the file format (codec), the storage backend, and database compilation, which is optional. Each part works with any choice for the other two. Everything else is an optional layer or feature that a project turns on per project or per data type: integrity, one owner per account, sagas, tiered databases, models, and the API.
+**Chosen:** YafiDB reads and writes the files and makes sure they are structured properly, which is what turns files into a database. It has three independent, configurable parts, each chosen in one configuration file (illustratively `yafidb.yaml`): the file format (codec), the storage backend, and database compilation, which is optional. Each part works with any choice for the other two. Everything else is an optional layer or feature that a project turns on per project or per data type: integrity, one owner per account, sagas, tiered databases, models, and the API.
 
-**Happy paths** are the simple, cheap, and open defaults: YAML for the format, S3-compatible storage (for example Cloudflare R2's free tier) or git for storage, and either no compilation or SQLite. **Templates** prefill the config with one happy-path choice per part, for example `git+yaml+none`, `git+yaml+sqlite`, `s3+yaml+none`, and `s3+yaml+sqlite` (names illustrative). A user can start from a template, pick their own option for any part, or bring their own plug-in.
-
-**Other plug-ins** are possible and are examples, not defaults: a local folder or Cloudflare Artifacts for storage, DuckDB, Parquet, or Postgres for compilation, and future formats such as a YAML 2. Cloudflare Artifacts needs the Workers Paid plan, which has a $5 per month minimum, so it is not a $0 path.
+**Defaults** are YAML for the format, S3-compatible storage for storage, and either no compilation or SQLite. **Templates** prefill the config with one choice per part, for example `s3+yaml+none` and `s3+yaml+sqlite` (names illustrative). A user can start from a template or change any part. The structure is composable, and more options may be added later. The README does not list other plug-ins, and this decision neither promises nor rules them out.
 
 **Plug-in interfaces** are defined at the interface level only. A format codec provides a name and version, reads bytes into records, writes records into bytes, and can add records to a file. A storage backend lists files, reads a file with a version tag, and writes only if the version tag is unchanged. A compiler names its engine and output, can rebuild from scratch, and never changes the files.
 
-**Git** stays a supported backend. Choosing it means accepting that git is slow for writes and limited in write concurrency, and that is the user's choice.
+**Git** as a storage backend is under reconsideration (see decision 1). Git is still used as a publish target for a generated static site (see decision 17).
 
 **Rejected:** a fixed stack that every project must use, and a single bundled storage or database.
 
 **Why:** the owner's direction is that everything is composable and files act as the database. Independent parts let a project start free and simple, then change one part without touching the others or the files. This builds on decision 1 (pluggable storage), decision 14 (pluggable format), and decision 15 (goals). Config key names and template names are illustrative and may change.
+
+## 17. A fully static website is compiled from the files and published through git
+
+**Chosen:** a key use is a fully static website. The files are compiled into a static site, and the generated site is committed to a repository so it can be published to GitHub Pages, Cloudflare Pages, or any static host. Only changes route through a small worker. See [Static site](static-site.md).
+
+**Why:** a static site needs no server for visitors, which keeps cost near $0 and makes the site fast. Git here is only the publish target. The records stay in the configured storage.
+
+## Open questions
+
+- **Git as a storage backend.** Git was once a supported backend for small projects, because it is free, keeps a commit log, and could even host the engine that runs it. It is now under reconsideration. The concerns are that git is slow for writes, that GitHub has outages, and that concurrent pushes conflict. Each backend also adds complexity to support. S3-compatible storage may be enough on its own. Until this is settled, the default is S3-compatible storage and git is used only as a publish target for generated static sites.

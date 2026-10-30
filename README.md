@@ -9,14 +9,14 @@ Files on their own are only a collection of files. YafiDB reads and writes the f
 ```mermaid
 flowchart TB
     C[Client]
-    C -->|change| W[Worker<br/>or fleet]
+    C -->|change| W[Serverless<br/>functions]
     W --> F[(Files per<br/>user or object)]
     F --> K[Compile]
     K --> S[Static site<br/>or database]
     C -->|read| S
 ```
 
-There are two separate paths. To change something, a client sends a request to a worker, which can be a single worker or a fleet running side by side. The worker checks the request and adds records to files in S3-compatible storage, kept separate for each user or object. A compile step then rebuilds the static site or database from the files. To read, a client skips the worker and the files and goes straight to the compiled static site or database.
+There are two separate paths. To change something, a client sends a request to a serverless function; one or many can run side by side, waking only when a request arrives. The function checks the request and adds records to files in S3-compatible storage, kept separate for each user or object. A compile step then rebuilds the static site or database from the files. To read, a client skips the worker and the files and goes straight to the compiled static site or database.
 
 ## The defaults
 

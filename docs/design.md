@@ -5,6 +5,7 @@ This document describes the whole system: what is stored, how writes and reads w
 ## Contents
 
 1. [The core idea](#the-core-idea)
+   - [Goals](#goals) and [Storage stages](#storage-stages)
 2. [Two worked examples](#two-worked-examples)
 3. [Storage](#storage)
 4. [File format and codecs](#file-format-and-codecs)
@@ -40,6 +41,29 @@ The diagram reads top to bottom. Writers are thin and only append and flush. Fil
 3. **Processing** turns files into whatever database engine the use case needs. Those databases are derived: delete one and rebuild it from the files. Queries, reports, and scale all come from this layer.
 
 This split is why the same design fits very different projects. The files stay simple at every size. The only part that grows is the derived database, and it can be any engine you choose.
+
+### Goals
+
+YafiDB stands for "Yet Another File DB", a nod to YAML files. It has four core goals.
+
+1. **Very easy for AI agents to spin up new projects.** A project is files plus model definitions. An AI can generate and read both, and there is no infrastructure to provision.
+2. **$0 cost for most any project.** Small projects cost nothing to run or to leave idle.
+3. **Infinite scaling through optional database writing.** Derived databases are opt-in. A project compiles one only when it needs to.
+4. **Pluggable storage by stage.** The same files can live in a git repository, move to object storage, or be compiled into any database.
+
+### Storage stages
+
+Storage stages answer one question: where do the files live as a project grows? The files stay the same at every stage.
+
+```mermaid
+flowchart TB
+    G[Git repo] --> S[Object storage]
+    S --> C[Compiled database]
+```
+
+1. **Git repo.** The files live in a git repository, and each commit is an append. This is the starter stage for small projects. It is free, keeps history, supports pull request review, and is easy for AI agents to use. Its limits are write concurrency and repository size.
+2. **Object storage.** The files move to S3-compatible object storage, with thin writers doing conditional writes. This is the path when write concurrency or size needs it.
+3. **Compiled database.** A processor compiles the files into any database engine. It is optional and works with either of the first two stages.
 
 ### Range
 
@@ -111,7 +135,7 @@ Storage answers one question: where does the truth live, and what does it look l
 
 ### Record files
 
-The truth is a set of readable **record files** in an S3-compatible object store. A record file holds an append-only sequence of records. Records are only added, never edited in place, so a file reads as a history. Today each record is a YAML document, and one file holds several documents separated by `---`, which is standard multi-document YAML.
+The truth is a set of readable **record files**. They live in the current storage stage: a git repository for small projects, or an S3-compatible object store when write concurrency or scale needs it. A record file holds an append-only sequence of records. Records are only added, never edited in place, so a file reads as a history. Today each record is a YAML document, and one file holds several documents separated by `---`, which is standard multi-document YAML.
 
 ```yaml
 ---

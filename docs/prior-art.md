@@ -13,7 +13,7 @@ No project found combines all of these: **readable, appendable record files**, *
 | [Stackbilt audit-chain](https://github.com/Stackbilt-dev/audit-chain) | Tamper-evident audit trail for Cloudflare Workers, using SHA-256 hash chaining with R2 and D1 | Closest in deployment: hash chain on R2 from Workers. It uses D1 for the index |
 | [Byspec ledger](https://byspec.ai/docs/ledger/) | Append-only JSONL ledger with `prev_hash`, SHA-256, and optional Ed25519 signatures kept outside the hashed payload | Signature outside the hashed payload, trusted-key fingerprints, offline verification |
 | [GoLogX](https://github.com/AyoubTadlaoui/GoLogX) | Go `slog` handler writing hash-chained, Ed25519-signed entries | Simple entry shape (`seq`, `prev`, `hash`, `sig`) and the note that end-truncation needs an external head-hash anchor |
-| [Ledger-Kernel](https://github.com/flyingrobots/ledger-kernel) | A specification for Git-native append-only ledgers with deterministic replay and signed entries | Its invariants: append-only, deterministic replay, authenticated entries. It uses Git as storage, which this design chose not to do |
+| [Ledger-Kernel](https://github.com/flyingrobots/ledger-kernel) | A specification for Git-native append-only ledgers with deterministic replay and signed entries | Its invariants: append-only, deterministic replay, authenticated entries. It uses Git as storage, which this design supports as a starter backend and moves beyond for write concurrency |
 
 ## Transparency logs
 

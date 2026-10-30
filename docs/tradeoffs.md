@@ -30,6 +30,14 @@ An immutable log conflicts with a request to delete a person's data. The answer 
 
 Records written under one model version must stay readable under later versions. That means versioned schemas plus upgrade steps on read, or occasional migrations that start new files. A migration is clean, and it becomes a long-running job at large scale.
 
+## Git as a storage backend
+
+Git is a supported backend for small and starter projects, with the files kept in a repository.
+
+- **Strengths:** it is free, it keeps full history, it supports pull request review, and it is easy for AI agents to work in.
+- **Limits:** many concurrent writers contend on commits, and a repository gets slower as it grows.
+- **What softens it:** move the same files to S3-compatible object storage with thin writers when write concurrency or size needs it. The files do not change in the move.
+
 ## The file format may change
 
 YAML is the format today. A later format means a new codec and a migration, and old files stay readable by their old codec. The cost is that every part must go through the codec and never parse files directly. The header syntax that every codec must read is still an open question.

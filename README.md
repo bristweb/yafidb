@@ -1,12 +1,19 @@
-# omni-db
+# YafiDB
 
-A design for a database whose source of truth is a set of human-readable files. Writing the files takes almost no CPU or server work. Every query, and all of the scale, comes from processing those files into any database engine you choose.
+YafiDB stands for "Yet Another File DB", a nod to YAML files. It is a design for a database whose source of truth is a set of human-readable files. Writing the files takes almost no CPU or server work. Every query, and all of the scale, comes from processing those files into any database engine you choose.
 
-**Status:** design only. There is no code in this repository yet. Any future code will be written in TypeScript and run on Bun. The repository name is a working name.
+**Status:** design only. There is no code in this repository yet. Any future code will be written in TypeScript and run on Bun.
+
+## Core goals
+
+1. **Very easy for AI agents to spin up new projects.** A project is files plus model definitions, and an AI can generate and read both. There is no infrastructure to provision.
+2. **$0 cost for most any project.** A small project costs nothing to run, and nothing when idle.
+3. **Infinite scaling through optional database writing.** Writing or compiling derived databases is opt-in. A project turns it on when it needs it, and chooses the engine.
+4. **Pluggable storage by stage.** The same files can live in a git repository, move to S3-compatible object storage, or be compiled into any database. The files do not change between stages.
 
 ## The idea in one paragraph
 
-Human-readable files are the source of truth. A writer does as little as possible: it checks a request, appends records to a file, and flushes the file to any S3-compatible object store (a storage service that holds files and speaks Amazon's S3 protocol). A processor then turns those files into whatever database engine the use case needs, such as SQLite, DuckDB, Parquet, or a server database. Those databases are derived, so any of them can be deleted and rebuilt from the files. Because the files stay simple and the database engine is your choice, the same design works for a weekend project, personal accounting, a bank, or a very large system.
+Human-readable files are the source of truth. A writer does as little as possible: it checks a request, appends records to a file, and flushes the file to storage: a git repository for small projects, or any S3-compatible object store (a storage service that holds files and speaks Amazon's S3 protocol) at scale. A processor then turns those files into whatever database engine the use case needs, such as SQLite, DuckDB, Parquet, or a server database. Those databases are derived, so any of them can be deleted and rebuilt from the files. Because the files stay simple and the database engine is your choice, the same design works for a weekend project, personal accounting, a bank, or a very large system.
 
 ```mermaid
 flowchart TB
@@ -19,6 +26,20 @@ flowchart TB
 The diagram reads top to bottom. Writers are thin and only append and flush. Files in any S3-compatible store are the source of truth. The processor builds a derived, rebuildable database of any engine from them. Queries, APIs, spreadsheets, and reports read from that database.
 
 The writers keep no database and run no queries, so they need almost no CPU and no always-on server. The processor and the derived databases carry the query and scale load, and they can be as small or as large as the use case needs.
+
+## Storage stages
+
+A project picks the simplest storage that fits and moves up only when it needs to. The files are the same at every stage.
+
+```mermaid
+flowchart TB
+    G[Git repo] --> S[Object storage]
+    S --> C[Compiled database]
+```
+
+1. **Git repo.** The files live in a git repository. This is the starter stage for small projects. It is free, keeps history, supports pull request review, and is easy for AI agents to work in.
+2. **Object storage.** The files move to S3-compatible object storage with thin writers. This is the path when write concurrency or repository size outgrows git.
+3. **Compiled database.** A processor compiles the files into any database engine. This stage is optional and can be added next to either of the first two.
 
 ## Range
 
@@ -47,13 +68,12 @@ All records and files are YAML today. YAML was chosen because it is human-readab
 
 YAML is the current format, not a permanent commitment. Each file declares its format and version in a header, such as `format: yaml/1`, and all reading and writing goes through a pluggable codec. A future version can adopt another format, such as a YAML 2 or one not yet invented, by adding a codec and a migration. See [File format and codecs](docs/design.md#file-format-and-codecs).
 
-## Goals
+## More goals
 
 - **Readable files as the truth.** A person can open a file and read the history.
 - **Minimal CPU and server overhead.** Writers wake per request, append, flush, and sleep.
 - **Any database for queries.** Scale comes from processing the files into the engine the use case needs.
 - **Universal.** One storage model fits ledgers, profiles, posts, ownership records, and follows, from tiny to huge.
-- **Near-zero incremental cost.** A small deployment costs $0 when nobody is using it.
 - **Free and open-source software only.** Every part can be inspected, forked, and self-hosted.
 - **No vendor lock-in.** The data is in an S3-compatible store, and the schemas and formulas are open standards.
 - **Usable from familiar tools.** SQL, Google Sheets, Excel, and Google Drive work through exports and derived databases.
@@ -64,7 +84,7 @@ YAML is the current format, not a permanent commitment. Each file declares its f
 - **Firehose data.** Access logs, telemetry, and other high-volume streams belong in a purpose-built pipeline.
 - **High write rates on one record.** The design suits records that each change rarely.
 - **Instant global reads.** Reads trail writes by seconds. Anything that needs an instant check asks the writer.
-- **Git as the source of truth.** Git is used for code and model history only.
+- **High write concurrency on git.** Git suits small projects. Projects with many concurrent writers use object storage.
 - **A new formula language.** Derived values use the existing CEL standard.
 
 ## First use case

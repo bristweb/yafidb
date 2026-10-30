@@ -243,3 +243,10 @@ The build can run in CI, or YafiDB can commit the generated site to a publish re
 - **Write coordination (decision 23).** Sagas are the proposed direction, and owners are one option under consideration. Whether either is chosen is open.
 - **Write queue (decision 8).** The writer appends to files directly. Whether a write queue is still needed is open.
 - **Official values (decision 10).** Decision 10 says the writer or the build computes official values. Confirm which one, or both.
+
+## File rollover
+
+**Chosen:** when a file reaches its size limit, YafiDB starts a new file. The engineer sets the limit for each data type, and YafiDB provides a default. An optional schedule (for example yearly) also starts new files. Whichever comes first wins. Only the newest file is ever written, so existing files are never updated.
+
+**Why:** editing existing files is the hardest part of a file database: object storage rewrites whole objects, and in-place edits risk conflicts and corruption. Capping file size bounds the cost of every write and leaves older files immutable.
+

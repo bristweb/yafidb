@@ -209,9 +209,13 @@ Object stores cannot append to an object. To add a record, the writer rewrites t
 
 ### File layout
 
-Two rules keep files at a useful size.
+Files never grow without limit. When a file reaches a limit, YafiDB starts a new file and adds later records there. Older files are never edited again. The engineer picks the limits for each data type:
 
-- **Split by time.** Records are stored as one file per period, for example per year: `contribution/alice/2026.yaml`. This bounds the cost of rewriting a file. The size limit is a tuning choice, not a standard. A year per file suits low-write records like the LLC. Busier records can split by month.
+- **Size limit (always on).** When a file reaches a set size, the next record starts a new file. YafiDB ships with a default, and each data type can override it.
+- **Scheduled breaks (optional).** A new file starts on a schedule, for example every year (`contribution/alice/2026.yaml`) or every month for busier records. This keeps files aligned with natural periods like tax years.
+
+When both are set, whichever comes first starts the new file. With chaining on, the new file's first record links to the previous file's last hash, so the chain continues across files. Because only the newest file ever changes, a write rewrites at most one bounded file, even on object storage that can't edit part of a file.
+
 - **No tons of tiny files.** Storage requests cost money and small objects are slow to list. At large scale, batches from many entities can share physical files, with an index recording which byte range belongs to which entity. A small deployment does not need this.
 
 Each file name and path is stable and predictable, so any tool can find records without a database.

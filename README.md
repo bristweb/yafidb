@@ -17,10 +17,12 @@ YafiDB keeps records in plain files—the source of truth—and turns them into 
 
 ## An example record
 
-All of a record is your data, except the `yafi` field, which Yafi reserves for itself. Records are grouped into files by person or object and by period, such as one file per year: `order/1042/2026.yaml`. Each data type's schema sets the format, so files do not declare one. Each record is a YAML document added to the end of the file. A record is identified by its file path and `yafi.id`. Records are never edited in place.
+All of a record is your data, except the `yafi` field, which Yafi reserves for itself. Records are grouped into files by person or object and by period, such as one file per year: `order/1042/2026.yaml`. Yafi writes a header at the top of each file naming the Yafi version and the schema, so records do not repeat them. Each record is a YAML document added to the end of the file. A record is identified by its file path and `yafi.id`. Records are never edited in place.
 
 ```yaml
 # order/1042/2026.yaml
+yafi: yafi@1
+schema: order@1
 ---
 status: placed
 customer: { name: Alice, email: alice@example.com }
@@ -32,7 +34,6 @@ note: |
   Ratio 3:1, and accents and emoji work too, café 🎉
 carrierLog: ""
 yafi:
-  schema: order@1       # set by Yafi, not by the file
   id: 1
   mode:
     type: checkpoint
@@ -45,7 +46,6 @@ yafi:
 status: shipped
 tracking: 1Z999AA10123456784
 yafi:
-  schema: order@1
   id: 2
   mode:
     type: patch
@@ -58,7 +58,6 @@ carrierLog: |
   +2026-10-30 09:14 Picked up, Knoxville TN
   +2026-10-30 21:02 Departed facility, Nashville TN
 yafi:
-  schema: order@1
   id: 3
   mode:
     type: diff
@@ -69,7 +68,7 @@ yafi:
 
 - `yafi` is reserved for Yafi. Yafi sets everything in it and rejects any user field with that name. The writer also rejects duplicate keys, since some parsers silently keep only the last of two identical keys.
 - `yafi.mode.type` is `checkpoint` (the full record), `patch` (only changed fields) or `diff` (line changes to a text field). Every record gives the `id` it builds on in `yafi.mode.from`; the first checkpoint uses `from: 0`.
-- `yafi.schema` names the schema for this data type. The writer sets it, so a file cannot choose its own.
+- The header's `yafi` names the version of Yafi's record layout, and `schema` names the schema for this data type. The writer sets both, so a file cannot choose its own. A new version starts a new file.
 - Your fields sit at the top level, as the schema defines them.
 - `yafi.id` and `yafi.written_at` are covered by the signature, so changing either breaks it. A signature cannot show that a record was removed or reordered. That needs chaining, described below. The timestamp is the worker's claim, not independent proof of when the record was made.
 - `yafi.signatures` follows the JOSE JSON serialization (RFC 7515). Each entry's `protected` value is a base64url-encoded header that names the algorithm (`alg`) and the key (`kid`). A user who also signs their entry adds a second item to the list. The signatures are left out of the signed content, since they cannot sign themselves.

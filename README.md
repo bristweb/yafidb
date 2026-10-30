@@ -36,6 +36,7 @@ yafi:
   seq: 1
   mode:
     type: checkpoint
+    base: 0
   written_at: "2026-10-29T15:02:11Z"
   signatures:
     - protected: eyJhbGciOiJFZDI1NTE5Iiwia2lkIjoid29ya2VyLTIwMjYtYSJ9
@@ -67,7 +68,7 @@ yafi:
 ```
 
 - `yafi` is reserved for Yafi. Yafi sets everything in it and rejects any user field with that name. The writer also rejects duplicate keys, since some parsers silently keep only the last of two identical keys.
-- `yafi.mode.type` is `checkpoint` (the full record), `patch` (only changed fields) or `diff` (line changes to a text field). A `patch` or `diff` gives the `seq` it modifies in `yafi.mode.base`.
+- `yafi.mode.type` is `checkpoint` (the full record), `patch` (only changed fields) or `diff` (line changes to a text field). Every record gives the `seq` it builds on in `yafi.mode.base`; the first checkpoint uses `base: 0`.
 - `yafi.schema` names the schema for this data type. The writer sets it, so a file cannot choose its own.
 - Your fields sit at the top level, as the schema defines them.
 - `yafi.seq` and `yafi.written_at` are covered by the signature, so changing either breaks it. A signature cannot show that a record was removed or reordered. That needs chaining, described below. The timestamp is the worker's claim, not independent proof of when the record was made.

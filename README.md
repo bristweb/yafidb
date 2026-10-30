@@ -45,8 +45,8 @@ tracking: 1Z999AA10123456784
 yafi:
   schema: order@1
   seq: 2
-  mode: patch
-  base: 1
+  mode:
+    patch: 1
   written_at: "2026-10-30T13:10:44Z"
   signatures: [...]
 ---
@@ -57,14 +57,14 @@ carrierLog: |
 yafi:
   schema: order@1
   seq: 3
-  mode: diff
-  base: 2
+  mode:
+    diff: 2
   written_at: "2026-10-31T01:05:19Z"
   signatures: [...]
 ```
 
 - `yafi` is reserved for Yafi. Yafi sets everything in it and rejects any user field with that name. The writer also rejects duplicate keys, since some parsers silently keep only the last of two identical keys.
-- `yafi.mode` is `checkpoint` (the full record), `patch` (only changed fields) or `diff` (line changes to a text field). A `patch` or `diff` names the `seq` it modifies in `yafi.base`.
+- `yafi.mode` is `checkpoint` (the full record), `patch` (only changed fields) or `diff` (line changes to a text field). A `patch` or `diff` gives the `seq` it modifies, as in `patch: 1`.
 - `yafi.schema` names the schema for this data type. The writer sets it, so a file cannot choose its own.
 - Your fields sit at the top level, as the schema defines them.
 - `yafi.seq` and `yafi.written_at` are covered by the signature, so changing either breaks it. A signature cannot show that a record was removed or reordered. That needs chaining, described below. The timestamp is the worker's claim, not independent proof of when the record was made.

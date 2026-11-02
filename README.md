@@ -76,10 +76,12 @@ flowchart LR
     R[Write request] --> E{Existing file<br/>checks}
     E -->|pass| W{Write<br/>checks}
     W -->|pass| L{Relationship<br/>checks}
-    L -->|pass| F[(Write)]
+    L -->|pass| P{Plugin checks<br/>optional}
+    P -->|pass| F[(Write)]
     E -->|fail| X[No write]
     W -->|fail| X
     L -->|fail| X
+    P -->|fail| X
 ```
 
 Details in [docs/record-format.md](docs/record-format.md#how-writes-are-validated).

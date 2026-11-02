@@ -43,15 +43,23 @@ A folder of files becomes a database when every write is checked against the sam
 See [how schemas are enforced in docs/design.md](docs/design.md#schemas) for the full pipeline.
 
 
+## Record ids
+
+Yafi writes `record_id` into the header when the file is created: the first 22 characters of the first entry's signature segment. A prune copies the header unchanged, so the id never changes.
+
 ## Linking records
 
-A reference is a path from the database root (starting with `/`) plus the target's id after `#`:
+A reference is a path from the database root (starting with `/`) plus an anchor that always begins with the target's record id:
 
 ```yaml
-customer: /customer/alice.yaml#kQ3x9fT2bL7pW8nZaB1c2d
+customer: /customer/alice.yaml#kQ3x9fT2bL7pW8nZaB1c2d                    # the record, current state
+customer: /customer/alice.yaml#kQ3x9fT2bL7pW8nZaB1c2d/Vt3nQcR8yP1wLm6sDf4gHa  # the record as of one entry
+customer: /customer/alice.yaml#kQ3x9fT2bL7pW8nZaB1c2d/Vt3nQcR8yP1wLm6sDf4gHa/email  # one field at that entry
 ```
 
-- The path is chosen by the architect and is clickable in GitHub, VS Code, or any file browser.
-- The id is the first 22 characters of the target's first signature segment. It is authoritative; the path is a convenience.
-- If a file is renamed, the compiled cache knows which files point to each id, so only those files are rewritten. The cache is derived from the files and can be rebuilt at any time.
-- Optionally, a renamed file leaves a stub at its old path pointing to the new one, so old links still work without tooling.
+- The path is chosen by the architect and stays clickable in ordinary file viewers.
+- The record id is authoritative; the path is a convenience.
+- An entry id is the first 22 characters of that entry's signature segment. Field paths follow JSON Pointer.
+- If a file is renamed, the compiled cache knows which files point to each record id, so only those files are rewritten. The cache is derived from the files and can be rebuilt at any time.
+- Optionally, a renamed file leaves a stub at its old path pointing to the new one.
+- A link to an entry removed by a prune falls back to the record, with a "history pruned" warning.

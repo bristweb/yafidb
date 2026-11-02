@@ -37,6 +37,21 @@ carrierLog: |
   +2026-10-30 09:14 Picked up, Knoxville TN
   +2026-10-30 21:02 Departed facility, Nashville TN
 yafi: diff 2026-10-31T01:05:19Z eyJhbGciOiJFZDI1NTE5In0...Lq7wRe
+---
+status: delivered
+customer: { name: Alice, email: alice@example.com }
+items:
+  - { sku: MUG-01, qty: 2, price: 12.50 }
+note: |
+  Gift message: "Happy 60th, Mom!" Love, José & Ana 🎉
+  Leave at the side door --- not the front (dog #2 bites).
+  Sorry it's late :\ wrap it in {blue} paper if you can.
+tracking: 1Z999AA10123456784
+carrierLog: |
+  2026-10-30 09:14 Picked up, Knoxville TN
+  2026-10-30 21:02 Departed facility, Nashville TN
+  2026-11-01 14:37 Delivered, side door
+yafi: checkpoint 2026-11-01T19:40:02Z eyJhbGciOiJFZDI1NTE5In0...Vt3nQc
 ```
 
 See [docs/record-format.md](docs/record-format.md) for what each part means.

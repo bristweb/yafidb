@@ -42,3 +42,16 @@ A folder of files becomes a database when every write is checked against the sam
 
 See [how schemas are enforced in docs/design.md](docs/design.md#schemas) for the full pipeline.
 
+
+## Linking records
+
+A reference is a relative path plus the target's id after `#`:
+
+```yaml
+customer: ../../customer/alice.yaml#kQ3x9fT2bL7pW8nZaB1c2d
+```
+
+- The path is chosen by the architect and is clickable in GitHub, VS Code, or any file browser.
+- The id is the first 22 characters of the target's first signature segment. It is authoritative; the path is a convenience.
+- If a file is renamed, the compiled cache knows which files point to each id, so only those files are rewritten. The cache is derived from the files and can be rebuilt at any time.
+- Optionally, a renamed file leaves a stub at its old path pointing to the new one, so old links still work without tooling.

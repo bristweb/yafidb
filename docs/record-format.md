@@ -45,7 +45,18 @@ See [how schemas are enforced in docs/design.md](docs/design.md#schemas) for the
 
 ## Record ids
 
-When a file is created, Yafi signs its header (`yafi_schema`, `record_schema`, the time, and a random nonce) and writes that signature on the header's own `yafi: header` line. The record id is the first 22 characters of that signature's last segment. The nonce matters: Ed25519 is deterministic, so two headers with the same schemas and time would otherwise get the same id. The first entry chains to the header signature, and a prune keeps the header line unchanged, so the id never changes.
+When a file is created, Yafi signs its header (`yafi_schema`, `record_schema`, the time, and a random nonce) and writes that signature on the header's own `yafi: header` line. The record id is the first 22 characters of that signature's last segment. The nonce makes every header signature unique (see below). The first entry chains to the header signature, and a prune keeps the header line unchanged, so the id never changes.
+
+## Nonce
+
+Ed25519 is deterministic and JWS adds no randomness, so identical input gives an identical signature. The nonce keeps header signatures, and therefore record ids, unique.
+
+- **Where:** required in the header signature's payload, as the claim `nonce`. Entries do not carry one; each entry signs the previous signature, so entries are already unique.
+- **Size:** 128 bits.
+- **Source:** a cryptographically secure random number generator (CSPRNG), such as `crypto.getRandomValues` in Node or Bun. Never a timestamp, counter, or hash of the content.
+- **Encoding:** base64url without padding, 22 characters.
+- **Checked:** a verifier rejects a header whose `nonce` is missing or is not 22 base64url characters.
+- **Generated once:** when the file is created. A prune keeps the header line, so the nonce and the record id stay the same.
 
 ## Linking records
 

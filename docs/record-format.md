@@ -45,7 +45,7 @@ See [how schemas are enforced in docs/design.md](docs/design.md#schemas) for the
 
 ## Record ids
 
-Yafi writes `record_id` into the header when the file is created: the first 22 characters of the first entry's signature segment. A prune copies the header unchanged, so the id never changes.
+When a file is created, Yafi signs its header (`yafi_schema`, `record_schema`, the time, and a random nonce) and writes that signature on the header's own `yafi: header` line. The record id is the first 22 characters of that signature's last segment. The nonce matters: Ed25519 is deterministic, so two headers with the same schemas and time would otherwise get the same id. The first entry chains to the header signature, and a prune keeps the header line unchanged, so the id never changes.
 
 ## Linking records
 

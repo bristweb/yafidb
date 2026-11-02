@@ -74,3 +74,7 @@ customer: /customer/alice.yaml#kQ3x9fT2bL7pW8nZaB1c2d/Vt3nQcR8yP1wLm6sDf4gHa/ema
 - If a file is renamed, the compiled cache knows which files point to each record id, so only those files are rewritten. The cache is derived from the files and can be rebuilt at any time.
 - Optionally, a renamed file leaves a stub at its old path pointing to the new one.
 - A link to an entry removed by a prune falls back to the record, with a "history pruned" warning.
+
+## Broken or corrupted files
+
+If a signature or chain link fails to verify, readers and compiles trust the file only up to the last entry that verifies. Everything after the break is ignored and reported. Writes to the file are refused until it is fixed. Repair is a manual admin task, such as restoring an earlier copy or appending a new admin-signed checkpoint.

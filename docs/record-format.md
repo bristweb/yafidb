@@ -97,21 +97,3 @@ yafi: checkpoint 2026-11-01T21:50:00Z eyJhbGciOiJFZDI1NTE5In0...Mw2kTp
 ```
 
 An admin can review the quarantine record later and, if anything was legitimate, write it back as a new entry.
-
-## Permitted writers
-
-A file can limit who may write to it by listing permitted key ids (`kid`). Every signature names its `kid` in the JWS header, and the writer refuses any entry whose `kid` is not on the current list.
-
-The list is set by a `keys` entry, which always states the full list:
-
-```yaml
-kids:
-  - shop-writer-2026
-  - admin-jonathan
-yafi: keys 2026-11-01T21:55:00Z eyJhbGciOiJFZDI1NTE5Iiwia2lkIjoiYWRtaW4tam9uYXRoYW4ifQ...Pk4vXe
-```
-
-- The latest `keys` entry replaces the earlier list, and applies to every entry after it.
-- A `keys` entry must itself be signed by a `kid` on the list it replaces.
-- With no `keys` entry, any key the writer trusts may write.
-- A `keys` entry is part of the signature chain like any other entry, and a prune's new first checkpoint carries the current list forward.

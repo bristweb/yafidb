@@ -29,11 +29,6 @@ note: |
 carrierLog: ""
 yafi: checkpoint 2026-10-29T15:02:11Z eyJhbGciOiJFZDI1NTE5In0...9fQk2x
 ---
-kids:
-  - shop-writer
-  - shipping-writer
-yafi: keys 2026-10-29T15:05:30Z eyJhbGciOiJFZDI1NTE5In0...Rk2mWd
----
 status: shipped
 tracking: 1Z999AA10123456784
 yafi: patch 2026-10-30T13:10:44Z eyJhbGciOiJFZDI1NTE5In0...Xk81pA

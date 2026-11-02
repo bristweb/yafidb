@@ -78,7 +78,7 @@ flowchart LR
     C -->|fail| X[No write]
 ```
 
-Details in [docs/record-format.md](docs/record-format.md#how-writes-are-validated).
+The full list of checks is in [docs/record-format.md](docs/record-format.md#enforced-checks).
 
 ## Goals
 

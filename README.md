@@ -18,7 +18,7 @@ yafi_schema: yafi@1
 record_schema: order@1
 ---
 status: placed
-customer: ../../customer/alice.yaml#kQ3x9fT2bL7pW8nZaB1c2d
+customer: /customer/alice.yaml#kQ3x9fT2bL7pW8nZaB1c2d
 items:
   - { sku: MUG-01, qty: 2, price: 12.50 }
 note: |
@@ -39,7 +39,7 @@ carrierLog: |
 yafi: diff 2026-10-31T01:05:19Z eyJhbGciOiJFZDI1NTE5In0...Lq7wRe
 ---
 status: delivered
-customer: ../../customer/alice.yaml#kQ3x9fT2bL7pW8nZaB1c2d
+customer: /customer/alice.yaml#kQ3x9fT2bL7pW8nZaB1c2d
 items:
   - { sku: MUG-01, qty: 2, price: 12.50 }
 note: |

@@ -10,7 +10,7 @@ YafiDB keeps records in plain files—the source of truth—and turns them into 
 
 ## An example record
 
-All of a record is your data, except the `yafi` field, which Yafi reserves for itself. Records are grouped into files by person or object and by period, such as one file per year: `order/1042/2026.yaml`. Yafi writes a header at the top of each file naming the Yafi version and the schema, so records do not repeat them. Each change is a YAML document added to the end of the file. Each file holds one record and starts with a checkpoint; every later entry changes that record, so an entry's place in the file is its identity. Entries are never edited in place.
+Every change is appended to the file, and Yafi adds its own `yafi` line to each one.
 
 ```yaml
 # order/1042/2026.yaml

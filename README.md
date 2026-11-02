@@ -69,7 +69,7 @@ flowchart LR
     C -->|read| S
 ```
 
-## How writes stay valid
+## How writes are validated
 
 ```mermaid
 flowchart LR
@@ -82,7 +82,7 @@ flowchart LR
     L -->|fail| X
 ```
 
-Details in [docs/record-format.md](docs/record-format.md#how-writes-stay-valid).
+Details in [docs/record-format.md](docs/record-format.md#how-writes-are-validated).
 
 ## Goals
 

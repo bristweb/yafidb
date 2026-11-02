@@ -8,13 +8,6 @@ YafiDB keeps records in plain files—the source of truth—and turns them into 
 
 **Explore:** [Design overview](docs/design.md) · [Examples](examples/) · [Configuration](docs/configuration.md)
 
-### Why YafiDB?
-
-- **Keep data understandable:** records are ordinary files you can read, diff, back up, or work with using an AI assistant.
-- **Catch bad edits:** every write is checked against the schema you define.
-- **Writes included:** many tools can read flat files with a schema, and some can export new files. YafiDB also includes the write API: a small serverless worker that takes change requests, validates them, and adds records to the files.
-- **Add complexity only when needed:** start with files, then optionally build a site or database for faster reads and richer queries.
-
 ## An example record
 
 All of a record is your data, except the `yafi` field, which Yafi reserves for itself. Records are grouped into files by person or object and by period, such as one file per year: `order/1042/2026.yaml`. Yafi writes a header at the top of each file naming the Yafi version and the schema, so records do not repeat them. Each change is a YAML document added to the end of the file. Each file holds one record and starts with a checkpoint; every later entry changes that record, so an entry's place in the file is its identity. Entries are never edited in place.

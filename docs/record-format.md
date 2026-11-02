@@ -98,16 +98,6 @@ yafi: checkpoint 2026-11-01T21:50:00Z eyJhbGciOiJFZDI1NTE5In0...Mw2kTp
 
 An admin can review the quarantine record later and, if anything was legitimate, write it back as a new entry.
 
-## Plugin checks
+## Enforced checks
 
-After the built-in checks (existing file, write, and relationship), an admin can add their own checks, such as permissions or business rules. Each check is one layer, run in the order configured in `yafidb.yaml`, and any layer can reject the write.
-
-A check can be written in any language. It runs as a command or an HTTP endpoint, receives the file path, the existing file, and the proposed entry as JSON, and answers pass or fail with a reason. Checks only decide; they never write. Only Yafi signs and appends.
-
-```yaml
-checks:
-  - name: permissions
-    run: bun checks/permissions.ts
-  - name: credit-limit
-    url: https://checks.example.com/credit-limit
-```
+Every write passes the enforced checks or nothing is written. Yafi's own checks always run: the existing file verifies, the entry passes its schema, and its references resolve. An admin can plug in more, such as permissions, written in any language. A check only decides pass or fail; only Yafi signs and appends.

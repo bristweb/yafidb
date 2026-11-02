@@ -45,10 +45,10 @@ See [how schemas are enforced in docs/design.md](docs/design.md#schemas) for the
 
 ## Linking records
 
-A reference is a relative path plus the target's id after `#`:
+A reference is a path from the database root (starting with `/`) plus the target's id after `#`:
 
 ```yaml
-customer: ../../customer/alice.yaml#kQ3x9fT2bL7pW8nZaB1c2d
+customer: /customer/alice.yaml#kQ3x9fT2bL7pW8nZaB1c2d
 ```
 
 - The path is chosen by the architect and is clickable in GitHub, VS Code, or any file browser.

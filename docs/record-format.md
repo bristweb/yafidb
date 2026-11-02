@@ -100,4 +100,12 @@ An admin can review the quarantine record later and, if anything was legitimate,
 
 ## Enforced checks
 
-Every write passes the enforced checks or nothing is written. Yafi's own checks always run: the existing file verifies, the entry passes its schema, and its references resolve. An admin can plug in more, such as permissions, written in any language. A check only decides pass or fail; only Yafi signs and appends.
+Every write passes all enforced checks, or nothing is written. Yafi's own checks always run, in this order:
+
+1. **Existing file:** every signature and chain link already in the file verifies.
+2. **Entry:** the entry passes its record schema, uses a valid mode (`checkpoint`, `patch`, or `diff`), and the result of applying it still passes the schema.
+3. **Relationships:** every reference resolves, meaning the path exists and its record id matches the anchor, along with any entry id or field it names.
+4. **Plugged-in checks:** any checks the admin adds, such as permissions, in any language. A check only decides pass or fail.
+5. **Write:** Yafi signs over the previous signature and appends with a conditional write. If the file changed since it was read, such as a duplicate or conflicting write, nothing is written.
+
+Only Yafi signs and appends.

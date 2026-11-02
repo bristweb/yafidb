@@ -1,0 +1,22 @@
+# YafiDB demo configuration
+storage:
+  type: local
+  dir: data
+
+schemas: schemas
+
+keys:
+  public: keys/public.jwks.json
+  private: keys/private.jwk.json   # secret, never committed; YAFI_PRIVATE_JWK overrides
+
+# Plugged-in checks run after Yafi's own checks, in this order.
+# Each is a command (JSON on stdin, {"pass": bool, "reason"?: string} on stdout) or a url.
+checks:
+  - name: limit-qty
+    command:
+      - bun
+      - plugins/limit-qty.ts
+
+build:
+  out: dist
+  sqlite: dist/cache.sqlite   # set to null to skip the SQLite cache

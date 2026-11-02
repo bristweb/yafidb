@@ -72,18 +72,18 @@ flowchart TB
 ## How writes stay valid
 
 ```mermaid
-flowchart LR
-    R[Write request] --> V{Passes<br/>your schema?}
+flowchart TB
+    R[Write request] --> E[Read the file]
+    E --> K{Existing signatures<br/>verify?}
+    K -->|yes| V{Passes<br/>your schema?}
     V -->|yes| L{References<br/>resolve?}
-    L -->|yes| S[Signed, linked to<br/>the previous entry]
-    S --> C{File unchanged<br/>since read?}
+    L -->|yes| S[Sign over the<br/>previous signature]
+    S --> C{Conditional write:<br/>file unchanged since read?}
     C -->|yes| F[(Appended<br/>to the file)]
-    V -->|no| X[Rejected,<br/>nothing written]
+    K -->|no| X[Rejected,<br/>nothing written]
+    V -->|no| X
     L -->|no| X
-    C -->|no: duplicate or<br/>conflicting write| X
-    F --> K{Every signature<br/>and link verifies?}
-    K -->|yes| O[Trusted by readers<br/>and compiles]
-    K -->|no| Q[Flagged and excluded<br/>until an admin resolves it]
+    C -->|no| X
 ```
 
 Details in [docs/record-format.md](docs/record-format.md#how-writes-stay-valid).

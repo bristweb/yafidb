@@ -17,7 +17,7 @@ YafiDB keeps records in plain files—the source of truth—and turns them into 
 
 ## An example record
 
-All of a record is your data, except the `yafi` field, which Yafi reserves for itself. Records are grouped into files by person or object and by period, such as one file per year: `order/1042/2026.yaml`. Yafi writes a header at the top of each file naming the Yafi version and the schema, so records do not repeat them. Each record is a YAML document added to the end of the file. A record is identified by its file path and `yafi.id`. Records are never edited in place.
+All of a record is your data, except the `yafi` field, which Yafi reserves for itself. Records are grouped into files by person or object and by period, such as one file per year: `order/1042/2026.yaml`. Yafi writes a header at the top of each file naming the Yafi version and the schema, so records do not repeat them. Each change is a YAML document added to the end of the file. Each file holds one record and starts with a checkpoint; every later entry changes that record, so an entry's place in the file is its identity. Entries are never edited in place.
 
 ```yaml
 # order/1042/2026.yaml
@@ -33,45 +33,25 @@ note: |
   Leave at the side door --- not the front (dog #2 bites).
   Sorry it's late :\ wrap it in {blue} paper if you can.
 carrierLog: ""
-yafi:
-  id: 1
-  mode:
-    type: checkpoint
-    from: 0
-  written_at: "2026-10-29T15:02:11Z"
-  signatures:
-    - protected: eyJhbGciOiJFZDI1NTE5Iiwia2lkIjoid29ya2VyLTIwMjYtYSJ9
-      signature: 9fQk2x...       # placeholder for the base64url signature
+yafi: checkpoint 2026-10-29T15:02:11Z eyJhbGciOiJFZDI1NTE5In0...9fQk2x
 ---
 status: shipped
 tracking: 1Z999AA10123456784
-yafi:
-  id: 2
-  mode:
-    type: patch
-    from: 1
-  written_at: "2026-10-30T13:10:44Z"
-  signatures: [...]
+yafi: patch 2026-10-30T13:10:44Z eyJhbGciOiJFZDI1NTE5In0...Xk81pA
 ---
 carrierLog: |
   @@ -0,0 +1,2 @@
   +2026-10-30 09:14 Picked up, Knoxville TN
   +2026-10-30 21:02 Departed facility, Nashville TN
-yafi:
-  id: 3
-  mode:
-    type: diff
-    from: 2
-  written_at: "2026-10-31T01:05:19Z"
-  signatures: [...]
+yafi: diff 2026-10-31T01:05:19Z eyJhbGciOiJFZDI1NTE5In0...Lq7wRe
 ```
 
 - `yafi` is reserved for Yafi. Yafi sets everything in it and rejects any user field with that name. The writer also rejects duplicate keys, since some parsers silently keep only the last of two identical keys.
-- `yafi.mode.type` is `checkpoint` (the full record), `patch` (only changed fields) or `diff` (line changes to a text field). Every record gives the `id` it builds on in `yafi.mode.from`; the first checkpoint uses `from: 0`.
+- `yafi` is one line: the mode, the time written, and a compact JOSE signature. The mode is `checkpoint` (the full record), `patch` (only changed fields) or `diff` (line changes to a text field). Patches and diffs apply to everything above them; a later checkpoint replaces the record in full.
 - The header's `yafi` names the version of Yafi's record layout, and `schema` names the schema for this data type. The writer sets both, so a file cannot choose its own. A new version starts a new file.
 - Your fields sit at the top level, as the schema defines them.
-- `yafi.id` and `yafi.written_at` are covered by the signature, so changing either breaks it. A signature cannot show that a record was removed or reordered. That needs chaining, described below. The timestamp is the worker's claim, not independent proof of when the record was made.
-- `yafi.signatures` follows the JOSE JSON serialization (RFC 7515). Each entry's `protected` value is a base64url-encoded header that names the algorithm (`alg`) and the key (`kid`). A user who also signs their entry adds a second item to the list. The signatures are left out of the signed content, since they cannot sign themselves.
+- The signature is a compact JWS (RFC 7515). Its header names the algorithm (`alg`) and key (`kid`). Its claims hold the mode, the time (`iat`), a hash of the entry's data, and the previous entry's signature, so every entry proves the one before it. The first entry links to the header. Editing, removing, or reordering any entry breaks the chain. The time is the writer's claim, not proof.
+- Pruning old entries is an admin action that knowingly drops history. The new first checkpoint keeps the hash of the last signature it replaced, so the chain still verifies.
 
 **Free text goes in as typed.** The `note` field takes any text with no escaping. The same `note` in JSON needs every quote and line break escaped:
 

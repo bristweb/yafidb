@@ -14,8 +14,8 @@ Every change is appended to the file, and Yafi adds its own `yafi` line to each 
 
 ```yaml
 # order/1042/2026.yaml
-yafi: yafi@1
-schema: order@1
+yafi_schema: yafi@1
+record_schema: order@1
 ---
 status: placed
 customer: { name: Alice, email: alice@example.com }

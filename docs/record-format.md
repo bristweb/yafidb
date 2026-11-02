@@ -6,7 +6,7 @@ Detail behind the README. Start there.
 
 - `yafi` is reserved for Yafi. Yafi sets everything in it and rejects any user field with that name. The writer also rejects duplicate keys, since some parsers silently keep only the last of two identical keys.
 - `yafi` is one line: the mode, the time written, and a compact JOSE signature. The mode is `checkpoint` (the full record), `patch` (only changed fields) or `diff` (line changes to a text field). Patches and diffs apply to everything above them; a later checkpoint replaces the record in full.
-- The header's `yafi` names the version of Yafi's record layout, and `schema` names the schema for this data type. The writer sets both, so a file cannot choose its own. A new version starts a new file.
+- The header's `yafi_schema` names the version of Yafi's record layout, and `record_schema` names the schema for this data type. The writer sets both, so a file cannot choose its own. A new version starts a new file.
 - Your fields sit at the top level, as the schema defines them.
 - The signature is a compact JWS (RFC 7515). Its header names the algorithm (`alg`) and key (`kid`). Its claims hold the mode, the time (`iat`), a hash of the entry's data, and the previous entry's signature, so every entry proves the one before it. The first entry links to the header. Editing, removing, or reordering any entry breaks the chain. The time is the writer's claim, not proof.
 - Pruning old entries is an admin action that knowingly drops history. The new first checkpoint keeps the hash of the last signature it replaced, so the chain still verifies.

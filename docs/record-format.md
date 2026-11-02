@@ -77,4 +77,23 @@ customer: /customer/alice.yaml#kQ3x9fT2bL7pW8nZaB1c2d/Vt3nQcR8yP1wLm6sDf4gHa/ema
 
 ## Broken or corrupted files
 
-If a signature or chain link fails to verify, readers and compiles trust the file only up to the last entry that verifies. Everything after the break is ignored and reported. Writes to the file are refused until it is fixed. Repair is a manual admin task, such as restoring an earlier copy or appending a new admin-signed checkpoint.
+If a signature or chain link fails to verify, the file is trusted up to the last entry that verifies. Yafi recovers it automatically:
+
+1. Everything after the break is moved, as-is, into a new quarantine record. The bad text is kept whole in a block field, and the record links back to the original by record id.
+2. The original file is truncated to its last verified entry, with a conditional write so nothing new is lost.
+3. Writes resume from there. No admin is needed.
+
+```yaml
+yafi_schema: yafi@1
+record_schema: quarantine@1
+yafi: header 2026-11-01T21:50:00Z eyJhbGciOiJFZDI1NTE5In0...Qz8rLm
+---
+source: /order/1042/2026.yaml#Hn4sW7cP2xLq9TbR5mZe1a
+reason: signature failed
+removed: |
+  status: returned
+  yafi: patch 2026-11-01T20:12:09Z eyJhbGciOiJFZDI1NTE5In0...BADsig
+yafi: checkpoint 2026-11-01T21:50:00Z eyJhbGciOiJFZDI1NTE5In0...Mw2kTp
+```
+
+An admin can review the quarantine record later and, if anything was legitimate, write it back as a new entry.

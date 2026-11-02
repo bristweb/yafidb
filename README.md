@@ -60,7 +60,7 @@ See [docs/record-format.md](docs/record-format.md) for what each part means.
 ## How it works
 
 ```mermaid
-flowchart TB
+flowchart LR
     C[Client]
     C -->|write| W[Writer<br/>minimal write API]
     W --> F[(Record files<br/>in object storage)]

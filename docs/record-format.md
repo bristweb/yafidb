@@ -30,7 +30,7 @@ In the file, the writer stores this as an indented literal block under `note: |`
 
 Writes and reads take separate paths. A write goes through a writer. A read skips the writers and goes to a derived output. If compiling is off, reads go to the files directly. Reads from a derived output can trail writes by a few seconds. Some sites need no writer at all; see the static website use case.
 
-## How writes stay valid
+## How writes are validated
 
 A folder of files becomes a database when every write is checked against the same rules, by a writer or by the build.
 

@@ -73,15 +73,9 @@ flowchart LR
 
 ```mermaid
 flowchart LR
-    R[Write request] --> E{Existing file<br/>checks}
-    E -->|pass| W{Write<br/>checks}
-    W -->|pass| L{Relationship<br/>checks}
-    L -->|pass| P{Plugin checks<br/>optional}
-    P -->|pass| F[(Write)]
-    E -->|fail| X[No write]
-    W -->|fail| X
-    L -->|fail| X
-    P -->|fail| X
+    R[Write request] --> C{Enforced checks<br/>Yafi, plus any plugged in}
+    C -->|pass| F[(Write)]
+    C -->|fail| X[No write]
 ```
 
 Details in [docs/record-format.md](docs/record-format.md#how-writes-are-validated).

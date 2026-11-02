@@ -1,0 +1,364 @@
+import { describe, expect, test } from "bun:test";
+import { readFile } from "node:fs/promises";
+import { join } from "node:path";
+import { Database } from "bun:sqlite";
+import { WriteError } from "../src/checks.ts";
+import { applyDiff, makeDiff, mergePatch, verifyFile } from "../src/format.ts";
+import { createHandler } from "../src/handler.ts";
+import { build } from "../src/build.ts";
+import { generateKeyPair, importJwks, importSigner } from "../src/jws.ts";
+import { commandCheck } from "../src/plugins.ts";
+import { appendEntry, createRecord } from "../src/writer.ts";
+import { makeEnv, order, readData, rejects, root, seedAlice, writeData } from "./helpers.ts";
+
+const ORDER = "/order/1042/2026.yaml";
+
+describe("happy path", () => {
+  test("create, patch, diff, checkpoint all verify; ids and nonce follow the spec", async () => {
+    const { ctx, dir } = await makeEnv();
+    const alice = await seedAlice(ctx);
+    const created = await createRecord(ctx, { path: ORDER, record_schema: "order@1", data: order(alice.ref, { carrierLog: "" }) });
+    await appendEntry(ctx, { path: ORDER, mode: "patch", data: { status: "shipped", tracking: "1Z999" } });
+    await appendEntry(ctx, { path: ORDER, mode: "diff", data: { carrierLog: makeDiff("", "picked up\ndeparted\n") } });
+    const last = await appendEntry(ctx, { path: ORDER, mode: "checkpoint", data: order(alice.ref, { status: "delivered", carrierLog: "picked up\ndeparted\narrived\n" }) });
+
+    const text = await readData(dir, ORDER);
+    const v = await verifyFile(text, ctx.keys);
+    expect(v.ok).toBe(true);
+    expect(v.entries.map((e) => e.mode)).toEqual(["checkpoint", "patch", "diff", "checkpoint"]);
+    expect(v.entries[2].state.carrierLog).toBe("picked up\ndeparted\n");
+    expect(v.state.status).toBe("delivered");
+    expect(text.split("\n").filter((l) => l === "---").length).toBe(4);
+    expect(text).toMatch(/^yafi_schema: yafi@1\nrecord_schema: order@1\nyafi: header /);
+    expect(text).not.toMatch(/\{ ?sku/); // block YAML, no flow style
+
+    // record id = first 22 chars of the header's signature segment; nonce is 128-bit base64url
+    const headerSig = text.split("\n")[2].split(" ")[3].split(".")[2];
+    expect(created.record_id).toBe(headerSig.slice(0, 22));
+    expect(v.header!.nonce).toMatch(/^[A-Za-z0-9_-]{22}$/);
+    expect(last.entry_id).toBe(v.entries[3].id);
+  });
+
+  test("headers created in the same second still get different ids", async () => {
+    const { ctx } = await makeEnv();
+    ctx.now = () => new Date("2026-11-02T12:00:00Z");
+    const a = await createRecord(ctx, { path: "/customer/a.yaml", record_schema: "customer@1", data: { name: "A", email: "a@x.io" } });
+    const b = await createRecord(ctx, { path: "/customer/b.yaml", record_schema: "customer@1", data: { name: "A", email: "a@x.io" } });
+    expect(a.record_id).not.toBe(b.record_id);
+  });
+
+  test("HTTP writer: POST creates and appends, anything else is refused, no reads", async () => {
+    const { ctx } = await makeEnv();
+    const h = createHandler(() => ctx, { token: "s3cret" });
+    const post = (path: string, body: unknown, auth = "Bearer s3cret") =>
+      h(new Request(`http://w${path}`, { method: "POST", headers: { authorization: auth }, body: JSON.stringify(body) }));
+    expect((await post("/records", {}, "nope")).status).toBe(401);
+    const c = await post("/records", { path: "/customer/alice.yaml", record_schema: "customer@1", data: { name: "Alice", email: "a@x.io" } });
+    expect(c.status).toBe(201);
+    const a = await post("/entries", { path: "/customer/alice.yaml", mode: "patch", data: { name: "Alice B" } });
+    expect(a.status).toBe(200);
+    expect((await h(new Request("http://w/customer/alice.yaml"))).status).toBe(404);
+    expect((await h(new Request("http://w/records"))).status).toBe(405);
+    const bad = await post("/entries", { path: "/customer/alice.yaml", mode: "patch", data: { email: 5 } });
+    expect(bad.status).toBe(422);
+    expect((await bad.json()).check).toBe("entry");
+  });
+
+  test("build outputs a linked static site and a SQLite cache with reverse references", async () => {
+    const { ctx, dir } = await makeEnv();
+    const alice = await seedAlice(ctx);
+    await createRecord(ctx, { path: ORDER, record_schema: "order@1", data: order(alice.ref) });
+    const out = join(dir, "dist"), sqlite = join(dir, "cache.sqlite");
+    const r = await build({ ctx, out, sqlite });
+    expect(r.records).toBe(2);
+    expect(r.brokenRefs).toEqual([]);
+    const page = await readFile(join(out, "order/1042/2026.html"), "utf8");
+    expect(page).toContain('href="../../customer/alice.html"');
+    expect(await readFile(join(out, "customer/alice.html"), "utf8")).toContain("Referenced by");
+    expect(await readFile(join(out, "order/index.html"), "utf8")).toContain("/order/1042/2026.yaml");
+    const db = new Database(sqlite);
+    const rows = db.query("select source_path from reverse_refs where target_record_id = ?").all(alice.record_id);
+    expect(rows).toEqual([{ source_path: ORDER }]);
+  });
+});
+
+describe("bad signature", () => {
+  async function seeded() {
+    const env = await makeEnv();
+    const alice = await seedAlice(env.ctx);
+    await createRecord(env.ctx, { path: ORDER, record_schema: "order@1", data: order(alice.ref) });
+    await appendEntry(env.ctx, { path: ORDER, mode: "patch", data: { status: "shipped" } });
+    return { ...env, alice };
+  }
+
+  test("an edited entry fails the data hash, and the writer refuses to append", async () => {
+    const { ctx, dir } = await seeded();
+    const text = await readData(dir, ORDER);
+    await writeData(dir, ORDER, text.replace("status: shipped", "status: delivered"));
+    const v = await verifyFile(await readData(dir, ORDER), ctx.keys);
+    expect(v.ok).toBe(false);
+    expect(v.entries.length).toBe(1);
+    expect(v.error).toContain("data does not match signed hash");
+    const before = await readData(dir, ORDER);
+    const e = await rejects(appendEntry(ctx, { path: ORDER, mode: "patch", data: { tracking: "x" } }));
+    expect(e).toBeInstanceOf(WriteError);
+    expect(e.check).toBe("existing");
+    expect(await readData(dir, ORDER)).toBe(before);
+  });
+
+  test("a signature from an unknown key, a flipped signature, and a reordered entry all fail", async () => {
+    const { ctx, dir } = await seeded();
+    const text = await readData(dir, ORDER);
+
+    const other = await importSigner((await generateKeyPair("evil")).privateJwk);
+    const forged = (await import("../src/jws.ts")).signJws;
+    const bad = await forged(other, { mode: "patch", iat: 1, data_hash: "x", prev: "y" });
+    const lines = text.trimEnd().split("\n");
+    lines[lines.length - 1] = lines.at(-1)!.replace(/\S+$/, bad);
+    expect((await verifyFile(lines.join("\n") + "\n", ctx.keys)).error).toContain("unknown kid");
+
+    const flipped = text.trimEnd().replace(/.$/, (c) => (c === "A" ? "B" : "A")) + "\n";
+    expect((await verifyFile(flipped, ctx.keys)).error).toContain("signature invalid");
+
+    const docs = text.split(/^---\n/m);
+    const reordered = [docs[0], docs[2], docs[1]].join("---\n");
+    expect((await verifyFile(reordered, ctx.keys)).ok).toBe(false);
+  });
+
+  test("duplicate keys and a user `yafi` field are rejected", async () => {
+    const { ctx, dir } = await seeded();
+    const text = await readData(dir, ORDER);
+    const dup = text.replace("status: shipped\n", "status: shipped\nstatus: placed\n");
+    expect((await verifyFile(dup, ctx.keys)).error).toContain("bad YAML");
+    const e = await rejects(appendEntry(ctx, { path: ORDER, mode: "patch", data: { yafi: "x" } }));
+    expect(e.check).toBe("entry");
+  });
+});
+
+describe("broken references", () => {
+  test("missing target, wrong record id, unknown entry, bad field, malformed", async () => {
+    const { ctx, dir } = await makeEnv();
+    const alice = await seedAlice(ctx);
+    const id = alice.record_id;
+    const create = (customer: string) => createRecord(ctx, { path: ORDER, record_schema: "order@1", data: order(customer) });
+
+    for (const bad of [
+      `/customer/nobody.yaml#${id}`,                     // path does not exist
+      `/customer/alice.yaml#${"A".repeat(22)}`,          // record id mismatch
+      `/customer/alice.yaml#${id}/${"B".repeat(22)}`,    // entry id not in file
+      `/customer/alice.yaml#${id}/${alice.entry_id}/nope`, // field not in that entry
+      `/customer/alice.yaml#${id}/email`,                // field without entry: not supported
+    ]) {
+      const e = await rejects(create(bad));
+      expect(e.check, bad).toMatch(/relationships|entry/);   // the order schema's pattern may catch some first
+      expect(await Bun.file(join(dir, "data", ORDER)).exists()).toBe(false);
+    }
+    // a pinned entry and field that do exist resolve
+    const good = await create(`/customer/alice.yaml#${id}/${alice.entry_id}/name`);
+    expect(good.record_id).toHaveLength(22);
+  });
+
+  test("the check names `relationships` for a dangling link", async () => {
+    const { ctx } = await makeEnv();
+    const e = await rejects(createRecord(ctx, { path: ORDER, record_schema: "order@1", data: order(`/customer/ghost.yaml#${"A".repeat(22)}`) }));
+    expect(e.check).toBe("relationships");
+  });
+});
+
+describe("conflicting writes", () => {
+  test("two writers that read the same version: exactly one wins, the other gets a conflict", async () => {
+    const { ctx, dir } = await makeEnv();
+    const alice = await seedAlice(ctx);
+    await createRecord(ctx, { path: ORDER, record_schema: "order@1", data: order(alice.ref) });
+    const settled = await Promise.allSettled([
+      appendEntry(ctx, { path: ORDER, mode: "patch", data: { status: "shipped" } }),
+      appendEntry(ctx, { path: ORDER, mode: "patch", data: { status: "cancelled" } }),
+    ]);
+    const ok = settled.filter((s) => s.status === "fulfilled");
+    const lost = settled.filter((s) => s.status === "rejected") as PromiseRejectedResult[];
+    expect(ok.length).toBe(1);
+    expect(lost[0].reason.check).toBe("write");
+    expect(lost[0].reason.status).toBe(409);
+    const v = await verifyFile(await readData(dir, ORDER), ctx.keys);
+    expect(v.ok && v.entries.length).toBe(2); // checkpoint + the one winner
+  });
+
+  test("a write that lands between read and write is not overwritten", async () => {
+    const { ctx, dir } = await makeEnv({ plugins: [] });
+    const alice = await seedAlice(ctx);
+    await createRecord(ctx, { path: ORDER, record_schema: "order@1", data: order(alice.ref) });
+    // a plugin that runs after the read lets us slip another write in first
+    ctx.plugins = [{ name: "race", run: async () => {
+      await appendEntry({ ...ctx, plugins: [] }, { path: ORDER, mode: "patch", data: { tracking: "sneaky" } });
+      return { pass: true };
+    } }];
+    const e = await rejects(appendEntry(ctx, { path: ORDER, mode: "patch", data: { status: "shipped" } }));
+    expect(e.check).toBe("write");
+    const v = await verifyFile(await readData(dir, ORDER), ctx.keys);
+    expect(v.ok).toBe(true);
+    expect(v.state.tracking).toBe("sneaky");
+    expect(v.state.status).toBe("placed");
+  });
+
+  test("creating a record that exists is a conflict; stale compare-and-swap fails", async () => {
+    const { ctx } = await makeEnv();
+    await seedAlice(ctx);
+    expect((await rejects(seedAlice(ctx))).status).toBe(409);
+    const f = (await ctx.storage.get("/customer/alice.yaml"))!;
+    expect((await ctx.storage.putIfMatch("/customer/alice.yaml", "x", "stale")).ok).toBe(false);
+    expect((await ctx.storage.putIfMatch("/customer/alice.yaml", "x", null)).ok).toBe(false);
+    expect((await ctx.storage.get("/customer/alice.yaml"))!.version).toBe(f.version);
+  });
+});
+
+describe("quarantine", () => {
+  test("a forged tail is moved whole to a quarantine record and the file recovers without an admin", async () => {
+    const { ctx, dir } = await makeEnv();
+    const alice = await seedAlice(ctx);
+    await createRecord(ctx, { path: ORDER, record_schema: "order@1", data: order(alice.ref) });
+    const good = await appendEntry(ctx, { path: ORDER, mode: "patch", data: { status: "shipped" } });
+    const goodText = await readData(dir, ORDER);
+    const forged = "---\nstatus: refunded\nyafi: patch 2026-11-01T20:12:09Z aaaa.bbbb.cccc\n";
+    await writeData(dir, ORDER, goodText + forged);
+
+    const out = join(dir, "dist");
+    const r = await build({ ctx, out, sqlite: null });
+    expect(r.quarantined).toHaveLength(1);
+    const q = r.quarantined[0].quarantinePath!;
+    expect(q).toStartWith("/quarantine/");
+
+    // the original is cut back to its last verified entry
+    expect(await readData(dir, ORDER)).toBe(goodText);
+    const v = await verifyFile(await readData(dir, ORDER), ctx.keys);
+    expect(v.ok).toBe(true);
+    expect(v.entries.at(-1)!.id).toBe(good.entry_id);
+
+    // the quarantine record verifies, keeps the bad text whole, and links back by record id
+    const qv = await verifyFile(await readData(dir, q), ctx.keys);
+    expect(qv.ok).toBe(true);
+    expect(qv.state.removed).toBe(forged);
+    expect(qv.state.source).toBe(`${ORDER}#${v.header!.id}`);
+    expect(qv.state.reason).toContain("entry 3");
+    expect(await readFile(join(out, "quarantine", q.split("/")[2].replace(".yaml", ".html")), "utf8")).toContain("refunded");
+
+    // writes resume
+    await appendEntry(ctx, { path: ORDER, mode: "patch", data: { status: "delivered" } });
+    // and a second build has nothing left to heal
+    expect((await build({ ctx, out, sqlite: null })).quarantined).toEqual([]);
+  });
+
+  test("without a signing key the build trusts the prefix, ignores the tail, and moves nothing", async () => {
+    const { ctx, dir } = await makeEnv();
+    const alice = await seedAlice(ctx);
+    await createRecord(ctx, { path: ORDER, record_schema: "order@1", data: order(alice.ref) });
+    const text = (await readData(dir, ORDER)) + "---\ngarbage: true\n";
+    await writeData(dir, ORDER, text);
+    const r = await build({ ctx: { ...ctx, signer: null as any }, out: join(dir, "dist"), sqlite: null });
+    expect(r.quarantined[0].skipped).toContain("no signing key");
+    expect(await readData(dir, ORDER)).toBe(text);
+    expect(await readFile(join(dir, "dist/order/1042/2026.html"), "utf8")).toContain("Trusted up to entry 1");
+  });
+
+  test("a file whose header fails is reported unusable and left alone", async () => {
+    const { ctx, dir } = await makeEnv();
+    await seedAlice(ctx);
+    const t = (await readData(dir, "/customer/alice.yaml".slice(1))).replace("record_schema: customer@1", "record_schema: order@1");
+    await writeData(dir, "customer/alice.yaml", t);
+    const r = await build({ ctx, out: join(dir, "dist"), sqlite: null });
+    expect(r.unusable).toHaveLength(1);
+    expect(r.records).toBe(0);
+    expect(await readData(dir, "customer/alice.yaml")).toBe(t);
+  });
+});
+
+describe("plugged-in checks", () => {
+  test("a failing check blocks the write; a crashing or hanging check fails closed", async () => {
+    const { ctx, dir } = await makeEnv();
+    const alice = await seedAlice(ctx);
+    const e = await rejects(createRecord(ctx, { path: ORDER, record_schema: "order@1", data: order(alice.ref, { items: [{ sku: "X", qty: 500, price: 1 }] }) }));
+    expect(e.check).toBe("plugin");
+    expect(e.message).toContain("over the limit");
+    expect(await Bun.file(join(dir, "data", ORDER)).exists()).toBe(false);
+
+    ctx.plugins = [commandCheck({ name: "crash", command: ["bun", "-e", "process.exit(3)"] }, root)];
+    expect((await rejects(createRecord(ctx, { path: ORDER, record_schema: "order@1", data: order(alice.ref) }))).check).toBe("plugin");
+    ctx.plugins = [commandCheck({ name: "hang", command: ["bun", "-e", "setTimeout(()=>{},60000)"], timeout_ms: 300 }, root)];
+    expect((await rejects(createRecord(ctx, { path: ORDER, record_schema: "order@1", data: order(alice.ref) }))).check).toBe("plugin");
+  });
+
+  test("checks run after Yafi's own, in configured order", async () => {
+    const { ctx } = await makeEnv({ plugins: [] });
+    const calls: string[] = [];
+    ctx.plugins = ["a", "b"].map((n) => ({ name: n, run: async () => (calls.push(n), { pass: n === "a" }) }));
+    const alice = await seedAlice({ ...ctx, plugins: [] });
+    const e = await rejects(createRecord(ctx, { path: ORDER, record_schema: "order@1", data: order(alice.ref) }));
+    expect(calls).toEqual(["a", "b"]);
+    expect(e.message).toContain("check b");
+    calls.length = 0;
+    await rejects(createRecord(ctx, { path: ORDER, record_schema: "order@1", data: { nope: 1 } })); // fails schema first
+    expect(calls).toEqual([]);
+  });
+});
+
+describe("storage backends and formats", () => {
+  test("S3 storage sends If-None-Match / If-Match and maps 412 to a conflict", async () => {
+    const { S3Storage } = await import("../src/storage.ts");
+    const objects = new Map<string, { body: string; etag: string }>();
+    let n = 0;
+    const server = Bun.serve({ port: 0, async fetch(req) {
+      const key = new URL(req.url).pathname;
+      expect(req.headers.get("authorization")).toStartWith("AWS4-HMAC-SHA256 Credential=AK/");
+      const cur = objects.get(key);
+      if (req.method === "GET") return cur ? new Response(cur.body, { headers: { etag: cur.etag } }) : new Response("", { status: 404 });
+      const ifNone = req.headers.get("if-none-match"), ifMatch = req.headers.get("if-match");
+      if ((ifNone === "*" && cur) || (ifMatch && cur?.etag !== ifMatch) || (ifMatch && !cur)) return new Response("", { status: 412 });
+      const etag = `"e${++n}"`;
+      objects.set(key, { body: await req.text(), etag });
+      return new Response("", { headers: { etag } });
+    } });
+    const s3 = new S3Storage({ endpoint: `http://localhost:${server.port}`, bucket: "b", accessKeyId: "AK", secretAccessKey: "SK" });
+    const a = await s3.putIfMatch("/x/a.yaml", "one", null);
+    expect(a.ok).toBe(true);
+    expect((await s3.putIfMatch("/x/a.yaml", "dup", null)).ok).toBe(false);
+    const got = (await s3.get("/x/a.yaml"))!;
+    expect(got.body).toBe("one");
+    expect((await s3.putIfMatch("/x/a.yaml", "two", '"stale"')).ok).toBe(false);
+    expect((await s3.putIfMatch("/x/a.yaml", "two", got.version)).ok).toBe(true);
+    expect(await s3.get("/x/none.yaml")).toBeNull();
+    server.stop(true);
+  });
+
+  test("Worker entry runs the same writer on an R2-style bucket", async () => {
+    const { default: worker } = await import("../src/worker.ts");
+    const kv = new Map<string, { body: string; etag: string }>();
+    let n = 0;
+    const bucket = {
+      async get(k: string) { const o = kv.get(k); return o ? { text: async () => o.body, etag: o.etag } : null; },
+      async put(k: string, v: string, o?: any) {
+        const cur = kv.get(k);
+        if (o?.onlyIf?.etagDoesNotMatch === "*" && cur) return null;
+        if (o?.onlyIf?.etagMatches && cur?.etag !== o.onlyIf.etagMatches) return null;
+        const etag = `e${++n}`; kv.set(k, { body: v, etag }); return { etag };
+      },
+      async list() { return { objects: [...kv.keys()].map((key) => ({ key })), truncated: false }; },
+    };
+    const { privateJwk, publicJwk } = await generateKeyPair("w");
+    const schema = (await import("yaml")).default.parse(await readFile(join(root, "schemas/customer@1.schema.yaml"), "utf8"));
+    const env = { BUCKET: bucket, YAFI_PRIVATE_JWK: JSON.stringify(privateJwk), YAFI_JWKS: JSON.stringify({ keys: [publicJwk] }),
+      YAFI_SCHEMAS: JSON.stringify({ "customer@1": schema }) };
+    const send = (p: string, b: unknown) => worker.fetch(new Request(`http://w${p}`, { method: "POST", body: JSON.stringify(b) }), env);
+    const c = await send("/records", { path: "/customer/a.yaml", record_schema: "customer@1", data: { name: "A", email: "a@x.io" } });
+    expect(c.status).toBe(201);
+    expect((await send("/entries", { path: "/customer/a.yaml", mode: "patch", data: { name: "B" } })).status).toBe(200);
+    const v = await verifyFile(kv.get("customer/a.yaml")!.body, await importJwks({ keys: [publicJwk] }));
+    expect(v.ok && v.state.name).toBe("B");
+  });
+
+  test("diff and merge-patch helpers", () => {
+    const a = "one\ntwo\nthree\n", b = "one\n2\nthree\nfour\n";
+    expect(applyDiff(a, makeDiff(a, b))).toBe(b);
+    expect(applyDiff("", makeDiff("", b))).toBe(b);
+    expect(() => applyDiff("different\n", makeDiff(a, b))).toThrow();
+    expect(mergePatch({ a: 1, b: { c: 2, d: 3 } }, { b: { c: null, e: 4 }, f: [1] })).toEqual({ a: 1, b: { d: 3, e: 4 }, f: [1] });
+  });
+});

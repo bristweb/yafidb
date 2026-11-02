@@ -1,0 +1,20 @@
+{
+  "name": "yafidb-demo",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "keygen": "bun scripts/keygen.ts",
+    "seed": "bun scripts/seed.ts",
+    "serve": "bun src/server.ts",
+    "build": "bun src/build-cli.ts",
+    "test": "bun test"
+  },
+  "dependencies": {
+    "@cfworker/json-schema": "^4.1.1",
+    "yaml": "^2.8.0"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "typescript": "^7.0.2"
+  }
+}

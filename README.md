@@ -4,9 +4,9 @@
 
 YafiDB keeps records in plain files—the source of truth—and turns them into whatever a project needs: a static site, a queryable database, or another format. Files stay portable and easy to inspect; derived outputs can be deleted and rebuilt at any time.
 
-> **Status: design stage.** This repository contains the design and examples, not working software. Names and interfaces are illustrative.
+> **Status: design stage.** This repository contains the design, examples, and a small [working demo](demo/README.md). Names and interfaces are illustrative.
 
-**Explore:** [Design overview](docs/design.md) · [Examples](examples/) · [Configuration](docs/configuration.md)
+**Explore:** [Design overview](docs/design.md) · [Examples](examples/) · [Configuration](docs/configuration.md) · [Working demo](demo/README.md)
 
 ## An example record
 

@@ -1,0 +1,18 @@
+$schema: https://json-schema.org/draft/2020-12/schema
+title: Quarantine
+type: object
+additionalProperties: false
+required:
+  - source
+  - reason
+  - removed
+properties:
+  source:
+    description: Link back to the record the text was removed from
+    type: string
+    pattern: "^/.+\\.yaml#[A-Za-z0-9_-]{22}$"
+  reason:
+    type: string
+  removed:
+    description: The removed text, kept whole
+    type: string

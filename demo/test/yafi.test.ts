@@ -126,7 +126,7 @@ describe("bad signature", () => {
     lines[lines.length - 1] = lines.at(-1)!.replace(/\S+$/, bad);
     expect((await verifyFile(lines.join("\n") + "\n", ctx.keys)).error).toContain("unknown kid");
 
-    const flipped = text.trimEnd().replace(/.$/, (c) => (c === "A" ? "B" : "A")) + "\n";
+    const flipped = text.trimEnd().replace(/(.)(.{8})$/, (_, c, rest) => (c === "A" ? "B" : "A") + rest) + "\n";
     expect((await verifyFile(flipped, ctx.keys)).error).toContain("signature invalid");
 
     const docs = text.split(/^---\n/m);

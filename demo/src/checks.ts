@@ -17,7 +17,7 @@ export class WriteError extends Error {
 export interface PluginInput {
   path: string;
   worker: string;
-  record_schema: string;
+  schema: string;
   existing: string;                      // the file as it is now (just the header when creating a record)
   entry: { mode: Mode; data: any };      // the proposed entry
   result: any;                           // the record after the entry is applied
@@ -43,25 +43,25 @@ export async function enforcedChecks(ctx: WriterContext, path: string, existingT
   // 1. Existing file: every signature and chain link verifies.
   const v: VerifyResult = await verifyFile(existingText, ctx.keys);
   if (!v.ok || !v.header) throw new WriteError("existing", `existing file does not verify: ${v.error}`, 409);
-  if (v.header.record_schema !== folderSchema)
-    throw new WriteError("existing", `existing file uses ${v.header.record_schema}, but its folder uses ${folderSchema}`, 409);
+  if (v.header.schema !== folderSchema)
+    throw new WriteError("existing", `existing file uses ${v.header.schema}, but its folder uses ${folderSchema}`, 409);
 
   // 2. Entry: valid mode, passes the schema, and so does the applied result.
   if (!MODES.includes(entry.mode)) throw new WriteError("entry", `invalid mode ${entry.mode}`);
   if (!isPlainObject(entry.data) || Object.keys(entry.data).length === 0) throw new WriteError("entry", "entry data must be a non-empty object");
   if ("yafi" in entry.data) throw new WriteError("entry", "`yafi` is a reserved field");
   if (v.entries.length === 0 && entry.mode !== "checkpoint") throw new WriteError("entry", "first entry must be a checkpoint");
-  const schema = await ctx.getSchema(v.header.record_schema);
-  if (!schema) throw new WriteError("entry", `unknown record_schema ${v.header.record_schema}`);
+  const schema = await ctx.getSchema(v.header.schema);
+  if (!schema) throw new WriteError("entry", `unknown schema ${v.header.schema}`);
   let result: any;
   try { result = applyEntry(v.state, entry.mode, entry.data); }
   catch (e: any) { throw new WriteError("entry", `cannot apply ${entry.mode}: ${e.message}`); }
   if (entry.mode !== "diff") {
     const own = entry.mode === "checkpoint" ? validate(schema, entry.data) : validate(partialSchema(schema), dropNulls(entry.data));
-    if (own) throw new WriteError("entry", `entry fails ${v.header.record_schema}: ${own}`);
+    if (own) throw new WriteError("entry", `entry fails ${v.header.schema}: ${own}`);
   }
   const whole = validate(schema, result);
-  if (whole) throw new WriteError("entry", `resulting record fails ${v.header.record_schema}: ${whole}`);
+  if (whole) throw new WriteError("entry", `resulting record fails ${v.header.schema}: ${whole}`);
 
   // 3. Relationships: every reference in the entry resolves.
   const seen = new Map<string, VerifyResult | null>();
@@ -75,7 +75,7 @@ export async function enforcedChecks(ctx: WriterContext, path: string, existingT
   }
 
   // 4. Write checks: the manifest's write pipeline. Steps with no dependency run together; any failure rejects.
-  const input: PluginInput = { path, worker: ctx.worker, record_schema: v.header.record_schema, existing: existingText, entry: { mode: entry.mode, data: entry.data }, result };
+  const input: PluginInput = { path, worker: ctx.worker, schema: v.header.schema, existing: existingText, entry: { mode: entry.mode, data: entry.data }, result };
   const results = await runPipeline(ctx.plugins.map((p) => ({ name: p.name, after: p.after })), async (name) => {
     const out = await ctx.plugins.find((p) => p.name === name)!.run(input);
     if (out?.pass !== true) throw new Error(`rejected the write${out?.reason ? `: ${out.reason}` : ""}`);

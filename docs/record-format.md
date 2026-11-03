@@ -6,7 +6,7 @@ Detail behind the README. Start there.
 
 - `yafi` is reserved for Yafi. Yafi sets everything in it and rejects any user field with that name. The writer also rejects duplicate keys, since some parsers silently keep only the last of two identical keys.
 - `yafi` is one line: the mode, the time written, and a compact JOSE signature. The mode is `checkpoint` (the full record), `patch` (only changed fields) or `diff` (line changes to a text field). Patches and diffs apply to everything above them; a later checkpoint replaces the record in full.
-- The header's `yafi_schema` names the version of Yafi's record layout, and `record_schema` names the schema for this data type. The writer sets both, so a file cannot choose its own. A new version starts a new file.
+- The header holds one field, `schema`, which names the schema for this data type. The writer sets it, so a file cannot choose its own. The header's mode, such as `header@1.0.0`, carries the version of the record format (see [Format versions](#format-versions)). A new version starts a new file.
 - Your fields sit at the top level, as the schema defines them.
 - The signature is a compact JWS (RFC 7515). Its header names the algorithm (`alg`) and key (`kid`). Its claims hold the mode, the time (`iat`), a hash of the entry's data, and the previous entry's signature, so every entry proves the one before it. The first entry links to the header. Editing, removing, or reordering any entry breaks the chain. The time is the writer's claim, not proof.
 - Pruning old entries is an admin action that knowingly drops history. The new first checkpoint keeps the hash of the last signature it replaced, so the chain still verifies.
@@ -43,9 +43,15 @@ A folder of files becomes a database when every write is checked against the sam
 See [how schemas are enforced in docs/design.md](docs/design.md#schemas) for the full pipeline.
 
 
+## Format versions
+
+The version rides on the header's mode: `header@1.0.0`. The signed claims hold that full mode, so the signature covers the version.
+
+A reader holds a list of the versions it supports, as PDF and SQLite readers do. It matches the version as whole text, exactly. Any string is a valid version (`1.0.0`, `2.1.0-beta`, `stable`), and Yafi never compares or orders them. `header@1.0` does not match `header@1.0.0`. A file whose version is not on the list is unusable to that reader: a build skips it and reports it, and a writer refuses to append to it. It is not quarantined, because a newer file is not a corrupt one. Support for a new format version means adding it to the list, and a file never changes version, so a new version starts a new file.
+
 ## Record ids
 
-When a file is created, Yafi signs its header (`yafi_schema`, `record_schema`, the time, and a random nonce) and writes that signature on the header's own `yafi: header` line. The record id is the first 22 characters of that signature's last segment. The nonce makes every header signature unique (see below). The first entry chains to the header signature, and a prune keeps the header line unchanged, so the id never changes.
+When a file is created, Yafi signs its header (the versioned mode, `schema`, the time, and a random nonce) and writes that signature on the header's own `yafi: header@<version>` line, in the same shape as every entry. The record id is the first 22 characters of that signature's last segment. The nonce makes every header signature unique (see below). The first entry chains to the header signature, and a prune keeps the header line unchanged, so the id never changes.
 
 ## Nonce
 
@@ -83,12 +89,11 @@ If a signature or chain link fails to verify, the file is trusted up to the last
 2. Once that write succeeds, the original file is truncated to its last verified entry, with a conditional write so nothing new is lost.
 3. Writes resume from there. No admin is needed.
 
-A file with no verified header, or one whose `record_schema` differs from its folder's schema, moves whole and is removed. Its `source` is the path alone, since it has no record id.
+A file with no verified header, or one whose `schema` differs from its folder's schema, moves whole and is removed. Its `source` is the path alone, since it has no record id.
 
 ```yaml
-yafi_schema: yafi@1
-record_schema: quarantine@1
-yafi: header 2026-11-01T21:50:00Z eyJhbGciOiJFZDI1NTE5In0...Qz8rLm
+schema: quarantine@1
+yafi: header@1.0.0 2026-11-01T21:50:00Z eyJhbGciOiJFZDI1NTE5In0...Qz8rLm
 ---
 source: /order/1042/2026.yaml#Hn4sW7cP2xLq9TbR5mZe1a
 reason: signature failed
@@ -105,7 +110,7 @@ An admin can review the quarantine record later and, if anything was legitimate,
 Every write passes all enforced checks, or nothing is written. Yafi's own checks always run, in this order:
 
 0. **Authority:** the path is inside a folder the writing worker owns, and a new record uses that folder's schema. See [architecture.md](architecture.md#writes).
-1. **Existing file:** every signature and chain link already in the file verifies, and its `record_schema` is the folder's schema.
+1. **Existing file:** every signature and chain link already in the file verifies, and its `schema` is the folder's schema.
 2. **Entry:** the entry passes its record schema, uses a valid mode (`checkpoint`, `patch`, or `diff`), and the result of applying it still passes the schema.
 3. **Relationships:** every reference resolves, meaning the path exists and its record id matches the anchor, along with any entry id or field it names.
 4. **Write checks:** the admin's own steps from the manifest's write pipeline, such as permissions, in any language. Steps run in parallel unless one names another in `after`. A step only decides pass or fail, and every step must pass.

@@ -17,7 +17,7 @@ const walk = async (base: string, dir: string): Promise<void> => {
       if (!v.ok || !v.header) continue;
       const rel = relative(base, p).replace(/\.yaml$/, ".json");
       await mkdir(dirname(join(out, rel)), { recursive: true });
-      await writeFile(join(out, rel), JSON.stringify({ path: "/" + relative(base, p), record_id: v.header.id, record_schema: v.header.record_schema, state: v.state }, null, 2) + "\n");
+      await writeFile(join(out, rel), JSON.stringify({ path: "/" + relative(base, p), record_id: v.header.id, schema: v.header.schema, state: v.state }, null, 2) + "\n");
       n++;
     }
   }

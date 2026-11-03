@@ -11,7 +11,7 @@ bun run seed            # writes root/: customer alice (worker crm) and the READ
 bun run build [folder]  # verify, heal through quarantine, then run the manifest's build steps (default: /)
 bun run serve           # one writer per worker on :8787, POST only (set YAFI_TOKEN to require a bearer token)
 bun run sign-manifest   # optional: sign root/yafi.yaml with the admin key
-bun test                # 51 tests
+bun test                # 55 tests
 ```
 
 The root is `root/`. Its manifest, [`root/yafi.yaml`](root/yafi.yaml), lists three workers (`crm`, `shop`, `quarantine`), the folder each owns and its schema, the write checks, and the build steps. Open `dist/site/index.html` after a build.
@@ -23,7 +23,7 @@ curl -XPOST localhost:8787/workers/shop/entries -d '{"path":"/order/1042/2026.ya
 curl -XPOST localhost:8787/workers/crm/entries  -d '{"path":"/order/1042/2026.yaml","mode":"patch","data":{"note":"x"}}'   # 403, check "authority"
 ```
 
-Endpoints: `POST /workers/<name>/records` with `{path, data}` (`record_schema` is optional, and must match the folder's schema), and `POST /workers/<name>/entries` with `{path, mode, data}`. A rejected write returns 4xx with `{error, check}` where `check` is `request`, `authority`, `existing`, `entry`, `relationships`, `plugin` or `write`. Nothing is written on any failure.
+Endpoints: `POST /workers/<name>/records` with `{path, data}` (`schema` is optional, and must match the folder's schema), and `POST /workers/<name>/entries` with `{path, mode, data}`. A rejected write returns 4xx with `{error, check}` where `check` is `request`, `authority`, `existing`, `entry`, `relationships`, `plugin` or `write`. Nothing is written on any failure.
 
 To see quarantine: append `---\nstatus: refunded\nyafi: patch 2026-11-01T20:12:09Z a.b.c` to `root/order/1042/2026.yaml`, or drop any file into `root/order/`, and run `bun run build`. The tail (or the whole stray file) moves to a record in `root/quarantine/`, and the order verifies again. Inspect the cache with `sqlite3 dist/cache.sqlite 'select * from reverse_refs'`.
 
@@ -47,7 +47,7 @@ To see quarantine: append `---\nstatus: refunded\nyafi: patch 2026-11-01T20:12:0
 
 - **Manifest location:** `/yafi.yaml` is a file in the root, read through the same storage as the records, so every worker sees one copy. It is excluded from record listings, and no worker owns it, so a write to it is refused. Deployment settings (storage location, keys) stay in `yafidb.yaml`, because they are not authority.
 - **Authority:** a context acts as one worker. Every write checks that the path is in that worker's folders (nearest folder rule) and that the record uses the folder's schema. Workers read anywhere in the root. The demo shares one signing key across workers, so authority is enforced by the writer and by the build's folder check, not by a key per worker.
-- **Signed payload:** header `{mode, iat, nonce, yafi_schema, record_schema}`; entry `{mode, iat, data_hash, prev}`. `data_hash` is SHA-256 of the entry's canonical JSON; `prev` is the previous signature segment. `iat` is epoch seconds and must equal the line's time.
+- **Signed payload:** header `{mode, iat, nonce, schema}`, where `mode` is the versioned `header@1.0.0`; entry `{mode, iat, data_hash, prev}`. `data_hash` is SHA-256 of the entry's canonical JSON; `prev` is the previous signature segment. `iat` is epoch seconds and must equal the line's time.
 - **Manifest signing** is optional: `bun run sign-manifest` adds a last line `yafi: manifest <time> <jws>` over a hash of the text above it. A signature that fails always stops the worker, and `manifest.require_signature: true` also refuses an unsigned manifest. The committed manifest is unsigned, because the key is per machine.
 - **Pipelines:** steps are a `command` (JSON on stdin), a `url` (JSON POST), or, for builds, a `builtin` (`relationship-cache`, `static-site`). A step runs once everything in its `after` has succeeded. Write checks fail fast; a build step that fails skips what follows it and the others finish. Only built-in steps see the verified records. Command and URL build steps get `{name, root, path, in, out}` (also as `YAFI_ROOT`, `YAFI_IN`, `YAFI_OUT`) and read the files themselves.
 - **Quarantine target:** the first folder whose schema is `quarantine@1`. The quarantine worker writes the record, the original is cut or deleted with a conditional write only after that succeeds, and then the manifest's `quarantine` steps run. Their failure is reported and cannot undo the move. A writer that finds a corrupt file quarantines it and refuses that write, so a retry succeeds.

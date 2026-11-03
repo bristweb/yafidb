@@ -1,6 +1,6 @@
 // The writer: runs the enforced checks, signs, and appends with a conditional write.
 import { enforcedChecks, WriteError, type EntryRequest, type WriterContext } from "./checks.ts";
-import { dumpData, entryDataHash, MODES, verifyFile, YAFI_SCHEMA, type Mode } from "./format.ts";
+import { dumpData, entryDataHash, MODES, verifyFile, CURRENT_HEADER, type Mode } from "./format.ts";
 import { healFile } from "./heal.ts";
 import { signJws } from "./jws.ts";
 import { ownerOf } from "./manifest.ts";
@@ -23,11 +23,11 @@ function stamp(ctx: WriterContext) {
   return { iat, time: isoSeconds(iat) };
 }
 
-async function headerText(ctx: WriterContext, record_schema: string) {
+async function headerText(ctx: WriterContext, schema: string) {
   const { iat, time } = stamp(ctx);
   const nonce = randomNonce();
-  const jws = await signJws(ctx.signer, { mode: "header", iat, nonce, yafi_schema: YAFI_SCHEMA, record_schema });
-  return `yafi_schema: ${YAFI_SCHEMA}\nrecord_schema: ${record_schema}\nyafi: header ${time} ${jws}\n`;
+  const jws = await signJws(ctx.signer, { mode: CURRENT_HEADER, iat, nonce, schema });
+  return `schema: ${schema}\nyafi: ${CURRENT_HEADER} ${time} ${jws}\n`;
 }
 
 async function commit(ctx: WriterContext, path: string, base: string, expected: string | null, entry: EntryRequest, folderSchema: string): Promise<WriteResult> {
@@ -50,10 +50,10 @@ async function commit(ctx: WriterContext, path: string, base: string, expected: 
   return { path, record_id: after.header!.id, entry_id: after.entries.at(-1)!.id, version: put.version };
 }
 
-export async function createRecord(ctx: WriterContext, req: { path: string; record_schema?: string; data: any }): Promise<WriteResult> {
+export async function createRecord(ctx: WriterContext, req: { path: string; schema?: string; data: any }): Promise<WriteResult> {
   const { schema } = authorize(ctx, req.path);
-  if (req.record_schema !== undefined && req.record_schema !== schema)
-    throw new WriteError("authority", `${req.path} uses ${schema}, not ${req.record_schema}`, 403);
+  if (req.schema !== undefined && req.schema !== schema)
+    throw new WriteError("authority", `${req.path} uses ${schema}, not ${req.schema}`, 403);
   if (await ctx.storage.get(req.path)) throw new WriteError("write", `${req.path} already exists`, 409);
   return commit(ctx, req.path, await headerText(ctx, schema), null, { mode: "checkpoint", data: req.data }, schema);
 }
@@ -65,8 +65,9 @@ export async function appendEntry(ctx: WriterContext, req: { path: string; mode:
   if (!f) throw new WriteError("request", `${req.path} does not exist`, 404);
   // Corrupt data found while writing is quarantined; this write is refused and can be retried.
   const v = await verifyFile(f.body, ctx.keys);
-  if (!v.ok || v.header?.record_schema !== schema) {
-    const why = v.ok ? `existing file uses ${v.header!.record_schema}, but its folder uses ${schema}` : v.error!;
+  if (v.unsupported) throw new WriteError("existing", `existing file uses ${v.unsupported}, which this writer does not support`, 409);
+  if (!v.ok || v.header?.schema !== schema) {
+    const why = v.ok ? `existing file uses ${v.header!.schema}, but its folder uses ${schema}` : v.error!;
     const h = await healFile(ctx, req.path, f, v, why, !v.ok && !!v.header);
     throw new WriteError("existing", `existing file does not verify: ${why}${"quarantinePath" in h ? `; moved to ${h.quarantinePath}, retry` : ` (${h.skipped})`}`, 409);
   }

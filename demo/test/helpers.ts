@@ -48,7 +48,7 @@ export const order = (customer: string, extra: Record<string, unknown> = {}) => 
 });
 
 export async function seedAlice(ctx: WriterContext) {
-  const a = await createRecord(ctx, { path: "/customer/alice.yaml", record_schema: "customer@1", data: { name: "Alice", email: "alice@example.com" } });
+  const a = await createRecord(ctx, { path: "/customer/alice.yaml", schema: "customer@1", data: { name: "Alice", email: "alice@example.com" } });
   return { ...a, ref: `/customer/alice.yaml#${a.record_id}` };
 }
 

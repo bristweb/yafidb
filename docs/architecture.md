@@ -132,4 +132,6 @@ flowchart LR
 - The data is removed from the original only after the quarantine write succeeds, so it exists in exactly one place.
 - An admin can keep this behavior, replace it, or add steps to the `quarantine` pipeline, such as alerts. Those steps run after the move and cannot undo it.
 
+A file whose header version the reader does not list is unusable, but it is not corrupt, so it is skipped and reported rather than quarantined. See [format versions](record-format.md#format-versions).
+
 The record layout is in [record-format.md](record-format.md#broken-or-corrupted-files).

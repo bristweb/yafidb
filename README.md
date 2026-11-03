@@ -14,9 +14,8 @@ Every change is appended to the file, and Yafi adds its own `yafi` line to each 
 
 ```yaml
 # order/1042/2026.yaml
-yafi_schema: yafi@1
-record_schema: order@1
-yafi: header 2026-10-29T15:02:10Z eyJhbGciOiJFZDI1NTE5In0...Hn4sW7
+schema: order@1
+yafi: header@1.0.0 2026-10-29T15:02:10Z eyJhbGciOiJFZDI1NTE5In0...Hn4sW7
 ---
 status: placed
 customer: /customer/alice.yaml#kQ3x9fT2bL7pW8nZaB1c2d

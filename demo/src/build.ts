@@ -18,6 +18,7 @@ export interface BuiltRecord { path: string; folder: string; schema: string; v: 
 export interface BuildReport {
   path: string; workers: Owner[]; records: number;
   quarantined: { path: string; quarantinePath?: string; reason: string; skipped?: string; followUps?: Record<string, string> }[];
+  unsupported: { path: string; version: string }[];   // files whose header version this reader does not list; not corrupt, not moved
   unowned: string[];                                  // files under the path that no worker folder covers
   brokenRefs: { path: string; pointer: string; error: string }[];
   steps: Record<string, { status: "ok" | "failed" | "skipped"; error?: string }>;
@@ -44,7 +45,7 @@ export async function build(o: { ctx: WriterContext; path?: string }): Promise<B
   const cwd = ctx.cwd ?? process.cwd();
   const path = o.path ?? "/";
   if (!/^\/([^/]+\/)*$/.test(path)) throw new Error(`build path must be a folder like / or /order/, got ${path}`);
-  const report: BuildReport = { path, workers: foldersUnder(ctx.manifest, path), records: 0, quarantined: [], unowned: [], brokenRefs: [], steps: {} };
+  const report: BuildReport = { path, workers: foldersUnder(ctx.manifest, path), records: 0, quarantined: [], unowned: [], unsupported: [], brokenRefs: [], steps: {} };
 
   // Pass 1: verify against each folder's schema, and heal.
   const files = (await listRecords(ctx.storage)).filter((p) => p.startsWith(path));
@@ -55,9 +56,10 @@ export async function build(o: { ctx: WriterContext; path?: string }): Promise<B
     const f = await ctx.storage.get(p);
     if (!f) continue;
     const v = await verifyFile(f.body, ctx.keys);
-    const wrongSchema = !!v.header && v.header.record_schema !== owner.schema;
+    if (v.unsupported) { report.unsupported.push({ path: p, version: v.unsupported }); continue; }   // newer, not corrupt: left alone
+    const wrongSchema = !!v.header && v.header.schema !== owner.schema;
     if (v.ok && !wrongSchema) continue;
-    const reason = wrongSchema ? `record_schema ${v.header!.record_schema} does not match folder schema ${owner.schema}` : v.error!;
+    const reason = wrongSchema ? `schema ${v.header!.schema} does not match folder schema ${owner.schema}` : v.error!;
     const r = await healFile(ctx, p, f, v, reason, !wrongSchema && !!v.header);
     report.quarantined.push("quarantinePath" in r ? { path: p, reason, ...r } : { path: p, reason, skipped: r.skipped });
     if ("quarantinePath" in r) healed.add(p);
@@ -71,7 +73,7 @@ export async function build(o: { ctx: WriterContext; path?: string }): Promise<B
     const f = owner && (await ctx.storage.get(p));
     if (!owner || !f) continue;
     const v = await verifyFile(f.body, ctx.keys);
-    if (!v.header || v.header.record_schema !== owner.schema) continue; // reported under quarantined
+    if (!v.header || v.header.schema !== owner.schema) continue; // reported under quarantined
     const warnings: string[] = [];
     if (!v.ok) warnings.push(`Trusted up to entry ${v.entries.length}; the rest of the file is ignored (${v.error}).`);
     const schema = await ctx.getSchema(owner.schema);

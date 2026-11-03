@@ -1,5 +1,5 @@
 # s3+yaml+sqlite
-# Key names are illustrative. No code exists yet.
+# Key names are illustrative.
 template: s3+yaml+sqlite
 storage:
   type: s3
@@ -7,8 +7,6 @@ storage:
   endpoint: https://example.r2.cloudflarestorage.com
 signing:
   alg: Ed25519
-chaining:
-  data_types: []
 derived_output:
   type: sqlite
   output: derived/app.sqlite

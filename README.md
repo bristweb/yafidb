@@ -20,7 +20,9 @@ yafi: header@1.0.0 2026-10-29T15:02:10Z eyJhbGciOiJFZDI1NTE5In0...Hn4sW7
 status: placed
 customer: /customer/alice.yaml#kQ3x9fT2bL7pW8nZaB1c2d
 items:
-  - { sku: MUG-01, qty: 2, price: 12.50 }
+  - sku: MUG-01
+    qty: 2
+    price: 12.50
 note: |
   Gift message: "Happy 60th, Mom!" Love, José & Ana 🎉
   Leave at the side door --- not the front (dog #2 bites).
@@ -41,7 +43,9 @@ yafi: diff 2026-10-31T01:05:19Z eyJhbGciOiJFZDI1NTE5In0...Lq7wRe
 status: delivered
 customer: /customer/alice.yaml#kQ3x9fT2bL7pW8nZaB1c2d
 items:
-  - { sku: MUG-01, qty: 2, price: 12.50 }
+  - sku: MUG-01
+    qty: 2
+    price: 12.50
 note: |
   Gift message: "Happy 60th, Mom!" Love, José & Ana 🎉
   Leave at the side door --- not the front (dog #2 bites).
@@ -94,7 +98,7 @@ flowchart LR
     C -->|fail| X[No write]
 ```
 
-The full list of checks is in [docs/record-format.md](docs/record-format.md#enforced-checks).
+A write that succeeds is always in the file. A write that loses a race to another writer, or to a quarantine, is refused with nothing written, and a retry builds on the winner. No locks are used. The full list of checks is in [docs/record-format.md](docs/record-format.md#enforced-checks), and the races are in [Concurrent writes](docs/record-format.md#concurrent-writes).
 
 ## Goals
 
@@ -109,7 +113,7 @@ The full list of checks is in [docs/record-format.md](docs/record-format.md#enfo
 - **Good fit:** records that change rarely and have a clear owner, such as ledgers, profiles, cap tables, recipe collections, guestbooks, and comments.
 - **Not a fit:** high-volume streams such as access logs and telemetry. Use a streaming pipeline for those.
 - **Git-only publishing:** every change is a commit, so use it only for sites that change rarely.
-- **Tradeoffs:** compiled reads can lag writes by a few seconds, and storage request costs rise as write frequency grows. See [docs/tradeoffs.md](docs/tradeoffs.md).
+- **Tradeoffs:** derived reads can lag writes by a few seconds, and storage request costs rise as write frequency grows. See [docs/tradeoffs.md](docs/tradeoffs.md).
 
 ## Use case: a static website with optional workers
 
@@ -124,21 +128,20 @@ Either way, the site is built from the records. The build can run in CI, or Yafi
 
 ## Configurable parts
 
-YafiDB is made of parts you can swap to fit your infrastructure. Each part has a default. Choices go in one config file, `yafidb.yaml`.
+YafiDB is made of parts you can swap to fit your infrastructure. Each part has a default. Deployment choices go in `yafidb.yaml`, which sits outside the data. Who may write where, and the pipelines, go in the manifest, `/yafi.yaml`, at the top of the root.
 
 | Part | Default | Other choices |
 | --- | --- | --- |
-| **Record format** | YAML, set by each data type's schema | Other formats, if someone builds them |
+| **Record format** | YAML, versioned on each file's header (`header@1.0.0`) | Other formats, if someone builds them |
 | **Storage** | Any object storage, such as Amazon S3 or Cloudflare R2 | Git, for the Git-only sites in the use case |
 | **Schema language** | JSON Schema, with CEL for computed values | Other schema languages, held to the same strict rules |
 | **Signing** | Ed25519 (`alg` value `Ed25519`) | Other JOSE algorithms, each named by its `alg` value. A shared-secret option such as HS256 cannot prove who wrote a record |
-| **Chaining** | Off | On, linking each record to the previous one, per data type |
-| **Derived output** | None | A static site, SQLite (a single-file SQL database), a scalable database, or another format |
-| **Where the writer runs** | Serverless function | Another serverless host, or none for Git-only sites |
+| **Derived output** | None, made by optional build steps | A static site, SQLite (a single-file SQL database), a scalable database, or another format |
+| **Where workers run** | Serverless function | Another serverless host, or none for Git-only sites |
 
 The writer is designed for TypeScript or JavaScript on Node or Bun, with no separate server. Schemas are language-neutral, so they apply the same way whatever runs them.
 
-Templates such as `s3+yaml+none` set the storage, format, and derived-output parts for you. A weekend project might use serverless functions, object storage, and no derived output. A ledger that moves money might add chaining and a dedicated database. The files stay the same in both. See [docs/configuration.md](docs/configuration.md).
+Templates such as `s3+yaml+none` set the storage, format, and derived-output parts for you. A weekend project might use serverless functions, object storage, and no derived output. A ledger that moves money might add a dedicated database and a stricter write-coordination design. The files stay the same in both. See [docs/configuration.md](docs/configuration.md).
 
 ## Learn more
 

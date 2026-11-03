@@ -33,14 +33,14 @@ The data flow has three layers, and each layer has one job.
 ```mermaid
 flowchart TB
     W[Writer] --> F[(Files<br/>in object storage)]
-    F --> K[Compile<br/>optional]
+    F --> K[Build steps<br/>optional]
     K --> D[Derived output]
     D --> Q[Reads]
 ```
 
 1. **Files** hold the truth. A person can open any file in a text editor and read the history. Any object storage holds them.
 2. **The writer** does as little as possible. It is a minimal write API, a serverless function that runs only when a write arrives. It validates the record against its schema, signs it, and adds it to a file. It keeps no database and runs no queries, so it needs almost no CPU and no always-on server.
-3. **Compiling** is optional. Compile builds derived outputs, such as a static site, a scalable database, or SQLite, from the files. Derived outputs can be deleted and rebuilt from the files. Queries, reports, and scale come from this layer when a project turns it on.
+3. **Build steps** are optional. A build reads the files and makes derived outputs, such as a static site, a scalable database, or SQLite. Derived outputs can be deleted and rebuilt from the files. Queries, reports, and scale come from this layer when a project turns it on.
 
 The files stay simple at every size. Derived outputs can use any engine or format you choose.
 
@@ -62,15 +62,15 @@ The same core idea covers a wide range. Only the configuration and the features 
 | --- | --- | --- |
 | Weekend project | A guestbook or a recipe collection | Readable files, the writer, and a small SQLite file built on demand |
 | Personal accounting | A household ledger and receipts | The same, plus a nightly export to a spreadsheet |
-| Small business | The LLC cap table and equity tracking in this repository | The same, plus chaining |
-| Banking | Accounts and money movement | The same, plus chaining and a write-coordination design that is still open |
+| Small business | The LLC cap table and equity tracking in this repository | The same |
+| Banking | Accounts and money movement | The same, plus a write-coordination design that is still open |
 | Very large scale | A video site's channels, comments, and likes | The same, plus tiered derived outputs and shared physical files |
 
 ### Optional layers and features
 
-Everything below is optional or still open. A project turns each one on in its configuration, per project or per data type. A weekend project can keep the defaults.
+Everything below is optional or still open. A project turns each one on in its configuration. A weekend project can keep the defaults.
 
-- **Integrity:** every record the writer writes is signed. Chaining is optional and set per data type. See [Integrity](#integrity).
+- **Integrity:** every entry the writer writes is signed, and each signature covers the one before it. See [Integrity](#integrity).
 - **Write coordination (open decision):** how concurrent changes stay correct. Sagas are the proposed direction, with one owner per account as one option under consideration. See [Write coordination](#write-coordination-open-decision).
 - **Tiered derived outputs:** several layers of freshness for very large read loads. See [Reads](#reads).
 - **Schemas:** JSON Schema for fields and CEL for computed values. See [Schemas](#schemas).
@@ -92,34 +92,38 @@ YAML is the current record format, not a permanent commitment. Each data type's 
 
 This section answers one question: how does a project choose how it works?
 
-Each project has one configuration file, called `yafidb.yaml` in these examples. Each part below has a default, and each can be configured on its own.
+A project has two kinds of settings, kept apart.
 
-- **Record format:** set per data type by its schema, with `x-format`. YAML today.
+- **`/yafi.yaml`, the manifest.** It sits at the top of the root, next to the data. It says which worker writes in which folder, which schema each folder uses, and which pipeline steps run. See [architecture.md](architecture.md#the-manifest).
+- **`yafidb.yaml`, deployment settings.** It sits outside the data and says how this deployment runs: where the storage is, which keys sign and verify, and where the workers run. Key names are illustrative. See [configuration.md](configuration.md).
+
+The parts below each have a default, and each can be set on its own.
+
+- **Record format:** YAML today. The format version rides on each file's header, such as `header@1.0.0`. See [Record format](#record-format).
 - **Storage:** any object storage, such as Amazon S3 or Cloudflare R2. Git for Git-only sites.
 - **Schema language:** JSON Schema, with CEL for computed values. Other schema languages must be just as strict.
-- **Signing:** Ed25519 by default. Other JOSE algorithms can be used.
-- **Chaining:** off by default. Turned on per data type.
-- **Derived output:** none by default. A static site, SQLite, a scalable database, or another format.
-- **Where the writer runs:** a serverless function. Another serverless host, or none for Git-only sites.
+- **Signing:** Ed25519 by default. Other JOSE algorithms can be used. Every entry is signed and chained to the one before it.
+- **Derived output:** none by default. Build steps in the manifest make a static site, SQLite, a scalable database, or another format.
+- **Where workers run:** a serverless function. Another serverless host, or none for Git-only sites.
 
-Write coordination is not in this list. It is an open design decision. See [Write coordination](#write-coordination-open-decision).
+Write coordination across accounts is not in this list. It is an open design decision. See [Write coordination](#write-coordination-open-decision).
 
-Templates such as `s3+yaml+none` fill in the storage, format, and derived-output parts for you. Templates, an example config, and the interface descriptions are in [docs/configuration.md](configuration.md). A fully static website compiled from the files is described in [docs/static-site.md](static-site.md).
+Templates such as `s3+yaml+none` fill in the storage, format, and derived-output parts for you. Templates, an example config, and the interface descriptions are in [docs/configuration.md](configuration.md). A fully static website built from the files is described in [docs/static-site.md](static-site.md).
 
 ## Two worked examples
 
-All values here are illustrative. The first example uses only the core idea with the `s3+yaml+sqlite` template. The second adds chaining and the proposed write coordination, which is still an open decision.
+All values here are illustrative. The first example uses only the core idea with the `s3+yaml+sqlite` template. The second adds the proposed write coordination, which is still an open decision.
 
 ### A weekend project: a guestbook
 
 A visitor signs a guestbook on a small site.
 
 1. **The request arrives.** The writer receives `{name: "Sam", message: "Nice site!"}`.
-2. **The writer adds a record.** It validates and signs one record, adds it to `guestbook/2026.yaml`, and writes the file to storage. It does nothing else.
-3. **The storage announces the new file.** If compiling is on, a compile step reads the changed file and updates a SQLite database (a small single-file SQL database).
+2. **The writer adds a record.** It validates and signs one entry, adds it to its file, and writes the file to storage. It does nothing else.
+3. **The storage announces the new file.** If a build is set up, a build step reads the changed file and updates a SQLite database (a small single-file SQL database).
 4. **The page loads.** It reads the latest entries from the SQLite file.
 
-If the SQLite file is lost, compile rebuilds it from the files. The files can be opened and read by hand at any time.
+If the SQLite file is lost, a build rebuilds it from the files. The files can be opened and read by hand at any time.
 
 ### Money movement: Alice pays Bob
 
@@ -129,9 +133,9 @@ Moving money needs stronger guarantees, so this example uses the proposed write 
 2. **Alice's owner wakes.** The owner is a small writer that is the only writer for Alice's records. It checks her balance (500), sees the transfer is allowed, and queues the record `pending, -100, transfer t_881`.
 3. **Bob's owner wakes.** It queues `+100, transfer t_881` in Bob's records.
 4. **Alice's owner confirms.** It queues `confirm t_881`. If Bob's owner had failed, Alice's owner would queue `reverse t_881` instead.
-5. **Each owner writes** its queued records to its own file in storage. A conditional write is one option for this step.
-6. **The storage emits events.** If compiling is on, compile reads only the changed files and updates the derived outputs.
-7. **Reads** now show Alice at 400 and Bob at 600. Until compile finishes, a read layer can add each owner's pending changes on top, so Alice sees her own transfer immediately.
+5. **Each owner writes** its queued records to its own file in storage, with a conditional write.
+6. **The storage emits events.** If a build is set up, it reads only the changed files and updates the derived outputs.
+7. **Reads** now show Alice at 400 and Bob at 600. Until the build finishes, a read layer can add each owner's pending changes on top, so Alice sees her own transfer immediately.
 
 Both accounts end up with their own complete, signed record of the transfer. The shared ID `t_881` lets an auditor match the two sides.
 
@@ -143,33 +147,22 @@ Storage answers one question: where does the truth live, and what does it look l
 
 ### Record files
 
-The truth is a set of readable **record files**. They live in any object storage, such as Amazon S3 or Cloudflare R2. Git holds records only for Git-only sites, where the repository is the storage. A record file holds an append-only sequence of records. Records are only added, never edited in place, so a file reads as a history. Each record is a YAML document, and one file holds several documents separated by `---`, which is standard multi-document YAML. A file has no header document.
+The truth is a set of readable **record files**. They live in any object storage, such as Amazon S3 or Cloudflare R2. Git holds records only for Git-only sites, where the repository is the storage. A record file is one record and its history, and the history is append-only. Entries are only added, never edited in place, so a file reads as a story. The file starts with a header, and each entry after it is a YAML document separated by `---`, which is standard multi-document YAML.
 
 ```yaml
-# contribution/alice/2026.yaml
+# order/1042/2026.yaml (abridged)
+schema: order@1
+yafi: header@1.0.0 2026-10-29T15:02:10Z eyJhbGciOiJFZDI1NTE5In0...Hn4sW7
 ---
-type: cash
-amount: 5000
-yafi:
-  schema: contribution@1
-  seq: 1
-  written_at: "2026-01-05T15:02:11Z"
-  signatures:
-    - protected: "<base64url protected header>"
-      signature: "<base64url signature>"
+status: placed
+customer: /customer/alice.yaml#kQ3x9fT2bL7pW8nZaB1c2d
+yafi: checkpoint 2026-10-29T15:02:11Z eyJhbGciOiJFZDI1NTE5In0...9fQk2x
 ---
-type: time
-hours: 12
-yafi:
-  schema: contribution@1
-  seq: 2
-  written_at: "2026-01-09T20:41:55Z"
-  signatures:
-    - protected: "<base64url protected header>"
-      signature: "<base64url signature>"
+status: shipped
+yafi: patch 2026-10-30T13:10:44Z eyJhbGciOiJFZDI1NTE5In0...Xk81pA
 ```
 
-User fields sit at the top level. The `yafi` block is set by the writer. See [Integrity](#integrity) for the signatures. The use case chooses how records are grouped into files. A common layout is one file per entity per period, such as `contribution/alice/2026.yaml`. When chaining is on for a data type, each record also carries `yafi.prev`, which links it to the record before. See [examples/chains/](../examples/chains/) for full records.
+User fields sit at the top level. The `yafi:` line is set by the writer: the mode, the time, and a compact signature. See [record-format.md](record-format.md) for what each part means and [Integrity](#integrity) for the signatures. The use case chooses how records are grouped into files. A common layout is one file per record, in a folder per kind, such as `order/1042/2026.yaml`. See [examples/chains/](../examples/chains/) for full files.
 
 ### Freeform Markdown and embedded code
 
@@ -200,12 +193,9 @@ note: |
 
 ### Object storage and appends
 
-Storage can be any object storage, such as Amazon S3, Cloudflare R2, or another S3-compatible store. At large scale, a project can run its own object storage near compile.
+Storage can be any object storage, such as Amazon S3, Cloudflare R2, or another S3-compatible store. At large scale, a project can run its own object storage near the build.
 
-Object stores cannot append to an object. To add a record, the writer rewrites the whole file. If two writers rewrite the same file at once, one write can overwrite the other. How to prevent that is an open decision under [Write coordination](#write-coordination-open-decision). Options under consideration include:
-
-- **A conditional write.** The writer sends the object's version tag (ETag) in an `If-Match` header. The store rejects the write if someone else changed the object first, and the writer then re-reads and retries.
-- **One owner per account.** Each account has one writer, so its records are not written at the same time. See [Write coordination](#write-coordination-open-decision).
+Object stores cannot append to an object. To add an entry, the writer rewrites the whole file, so two writers could overwrite each other. A **conditional write** prevents that. The writer sends the object's version tag (ETag) in an `If-Match` header, and the store rejects the write if someone else changed the object first. Nothing is written, and the caller re-reads and retries. A success always means the entry is in the file. Coordination across accounts is still open. See [Write coordination](#write-coordination-open-decision), which also lists one owner per account as an option.
 
 ### File layout
 
@@ -214,7 +204,7 @@ Files never grow without limit. When a file reaches a limit, YafiDB starts a new
 - **Size limit (always on).** When a file reaches a set size, the next record starts a new file. YafiDB ships with a default, and each data type can override it.
 - **Scheduled breaks (optional).** A new file starts on a schedule, for example every year (`contribution/alice/2026.yaml`) or every month for busier records. This keeps files aligned with natural periods like tax years.
 
-When both are set, whichever comes first starts the new file. With chaining on, the new file's first record links to the previous file's last hash, so the chain continues across files. Because only the newest file ever changes, a write rewrites at most one bounded file, even on object storage that can't edit part of a file.
+When both are set, whichever comes first starts the new file. The new file's first checkpoint links to the previous file's last signature, so the chain continues across files. How a rolled-over file keeps its record id is open. Because only the newest file ever changes, a write rewrites at most one bounded file, even on object storage that can't edit part of a file.
 
 - **No tons of tiny files.** Storage requests cost money and small objects are slow to list. At large scale, batches from many entities can share physical files, with an index recording which byte range belongs to which entity. A small deployment does not need this.
 
@@ -222,109 +212,32 @@ Each file name and path is stable and predictable, so any tool can find records 
 
 ### Changes: checkpoint, patch, and diff
 
-Records are never edited in place. A change is a new record, and every record must set `yafi.mode` to exactly one of three modes. A record with no mode is rejected, and a record never mixes modes.
+Records are never edited in place. A change is a new entry, and every entry sets exactly one of three modes. An entry with no mode is rejected, and an entry never mixes modes.
 
-| Mode | What the record holds | How it is applied |
+| Mode | What the entry holds | How it is applied |
 |---|---|---|
 | `checkpoint` | The complete record | Replaces the current state |
-| `patch` | Only the changed fields, nested as deep as needed | Merged into the state from `base` (JSON Merge Patch rules, RFC 7386); arrays are replaced whole |
-| `diff` | A unified line diff for each changed text field | Applied to that field's text from `base` |
+| `patch` | Only the changed fields, nested as deep as needed | Merged into the current state (JSON Merge Patch rules, RFC 7386); arrays are replaced whole |
+| `diff` | A unified line diff for each changed text field | Applied to that field's text in the current state |
 
 Rules:
 
-- `patch` and `diff` records name their `base` (the `seq` they build on) and a `hash` of the full rebuilt record. The compile step rebuilds the record and checks the hash.
-- Fields that are left out keep their value from `base`.
+- A `patch` or `diff` applies to the state built by every entry above it, so a reader replays the file from the top. There is no separate base or hash field: each signature covers the entry's data and the previous signature.
+- Fields that are left out keep their value.
 - YafiDB does not know where data came from. The engineer decides: keep original text, such as a JSON or XML response or a carrier log, as a text field and change it by `diff`, or parse it into YAML fields and change them by `patch`. A change that `patch` handles badly, such as one new item in a long parsed array, can be written as a new `checkpoint`.
-- The writer starts every new file with a `checkpoint` (see [File layout](#file-layout)), so each file can be read on its own. The schema can also force a checkpoint every N records to keep rebuilds short.
+- The writer starts every new file with a header and a `checkpoint`, so the first entry stands alone. The schema can also force a checkpoint every N entries to keep replays short.
 - A snapshot that has not changed is not written.
 
-```yaml
-# order/1042/2026.yaml
----
-status: placed
-customer: { name: Alice, email: alice@example.com }
-shipTo: { city: Knoxville, state: TN }
-items:
-  - { sku: MUG-01, qty: 2, price: 12.50 }
-  - { sku: TEE-03, qty: 1, price: 20.00 }
-note: |
-  Gift for "Mom" (see {card}). Leave at the side door \n not the front.
-  Dashes --- do not end the block, and café 🎉 works too.
-carrierLog: ""
-yafi:
-  schema: order@1             # set by Yafi, not by the file
-  seq: 1
-  mode: checkpoint
-  written_at: "2026-10-29T15:02:11Z"
-  signatures:
-    - protected: eyJhbGciOiJFZDI1NTE5Iiwia2lkIjoid29ya2VyLTIwMjYtYSJ9
-      signature: 9fQk2x...     # placeholder for the base64url signature
----
-status: shipped
-tracking: 1Z999AA10123456784
-yafi:
-  schema: order@1
-  seq: 2
-  mode: patch
-  base: 1
-  hash: 7c2e...               # hash of the full rebuilt record
-  written_at: "2026-10-30T13:10:44Z"
-  signatures:
-    - protected: eyJhbGciOiJFZDI1NTE5Iiwia2lkIjoid29ya2VyLTIwMjYtYSJ9
-      signature: Lm3vQa...
----
-carrierLog: |
-  @@ -0,0 +1,2 @@
-  +2026-10-30 09:14 Picked up, Knoxville TN
-  +2026-10-30 21:02 Departed facility, Nashville TN
-yafi:
-  schema: order@1
-  seq: 3
-  mode: diff
-  base: 2
-  hash: 41ab...
-  written_at: "2026-10-31T01:05:19Z"
-  signatures:
-    - protected: eyJhbGciOiJFZDI1NTE5Iiwia2lkIjoid29ya2VyLTIwMjYtYSJ9
-      signature: Qz81kP...
----
-carrierLog: |
-  @@ -2,0 +3 @@
-  +2026-10-31 13:40 Delivered, front porch
-yafi:
-  schema: order@1
-  seq: 4
-  mode: diff
-  base: 3
-  hash: 9f3c...
-  written_at: "2026-10-31T17:41:02Z"
-  signatures:
-    - protected: eyJhbGciOiJFZDI1NTE5Iiwia2lkIjoid29ya2VyLTIwMjYtYSJ9
-      signature: Hd02xR...
----
-status: delivered
-yafi:
-  schema: order@1
-  seq: 5
-  mode: patch
-  base: 4
-  hash: d08b...
-  written_at: "2026-10-31T17:41:05Z"
-  signatures:
-    - protected: eyJhbGciOiJFZDI1NTE5Iiwia2lkIjoid29ya2VyLTIwMjYtYSJ9
-      signature: Wc7nTe...
-```
-
-Seq 1 is the full order. Seqs 2 and 5 patch structured fields. Seqs 3 and 4 add lines to the carrier's raw log without copying the earlier lines.
+The [README](../README.md#an-example-record) shows one file with all three modes.
 
 ## Record format
 
 This section answers one question: how can the record format change later without breaking old data?
 
-Each data type's schema sets its record format with the `x-format` keyword, for example `x-format: yaml/1`. Today every format is YAML. Files do not declare their own format. A schema version pins the format, so the record's signature covers it too. The design supports format changes in two ways.
+Each file's header names the format version in its mode, for example `yafi: header@1.0.0 ...`. Today the one format is YAML. The signed claims hold the version, so the signature covers it. The design supports format changes in two ways.
 
-1. **The schema names the format.** Code that reads or writes a record uses the format its schema names. `yafi.schema` ties each record to that schema version, so a file cannot switch formats on its own.
-2. **Switching formats is a new schema version plus a migration.** A new format needs an implementation that reads and writes it. Moving existing data to it is a migration that follows the same pattern as a schema migration: the migration script is deterministic and starts new files with a clear link to the old ones. Old files stay readable under their old format, so nothing has to be converted before it is needed. Other formats are added only if someone builds them.
+1. **The header names the version.** Code that reads or writes a file uses the version on its header, and the check tool keeps a list of the versions it supports. A file cannot change its own version, and a version not on the list is corrupt. See [Format versions](record-format.md#format-versions).
+2. **Switching versions starts new files.** A new format needs an implementation that reads and writes it. Moving existing data to it is a migration that follows the same pattern as a schema migration: the migration script is deterministic and starts new files with a clear link to the old ones. Old files stay readable under their old version, so nothing has to be converted before it is needed.
 
 ## Writes
 
@@ -334,16 +247,16 @@ Writes answer one question: how do changes get into the files with the least CPU
 
 A writer does these steps for each request, and nothing more.
 
-1. **Check the request.** It validates the record against its schema (see [How a write is validated](#how-a-write-is-validated)) and checks the idempotency key, if the request has one.
-2. **Sign the record.** It sets the `yafi` fields and signs the record (see [Integrity](#integrity)).
-3. **Add it to the file.** It adds the record to the end of its file and writes the file to storage. How concurrent writes to the same file are kept safe is open. See [Write coordination](#write-coordination-open-decision).
+1. **Check the request.** It runs the check tool on the existing file, then the enforced checks (see [How a write is validated](#how-a-write-is-validated)).
+2. **Sign the entry.** It sets the `yafi` line and signs the entry over the previous signature (see [Integrity](#integrity)).
+3. **Add it to the file.** It adds the entry to the end of its file and writes the file with a conditional write, so if the file changed since it was read, nothing is written and the caller retries.
 4. **Sleep.** It holds no database and runs no queries, so it can wake per request and cost nothing when idle.
 
-A writer keeps no state between requests. Any number of them can run, because the files and the store do the heavy lifting. Whether concurrent writes to the same file are safe is part of the open write-coordination decision.
+A writer keeps no state between requests. Any number of them can run, because the files and the store do the heavy lifting. Two writers to the same file cannot both succeed from the same starting version, because the conditional write lets only one through.
 
-### Idempotency keys
+### Idempotency keys (open)
 
-A request can carry an idempotency key, stored as `yafi.idem`. Writers and compile steps skip any key they have already applied, so a retried request never counts twice.
+The current entry format has no idempotency field. A request that hits a conflict is re-read and retried by the caller, and a retry after a success would add a second entry. Whether entries carry an idempotency key is open.
 
 ### Batching and the queue
 
@@ -357,27 +270,27 @@ For use cases that need stronger guarantees, see [Write coordination](#write-coo
 
 Reads answer one question: how do users query fast data that is built from slow, readable files?
 
-Compile is optional. A small project can skip it and read the files themselves. A project that needs fast queries turns it on. Compile then builds derived outputs from the files, and queries run against them. A derived output can use any engine or format, so scale is limited only by the one you pick.
+A build is optional. A small project can skip it and read the files themselves. A project that needs fast queries adds build steps. A build makes derived outputs from the files, and queries run against them. A derived output can use any engine or format, so scale is limited only by the one you pick.
 
 ### Change events
 
-Each write to a file produces an object-created notification (for example, [R2 event notifications](https://developers.cloudflare.com/r2/buckets/event-notifications/), or a webhook on another S3-compatible store). The notification can wake compile.
+Each write to a file produces an object-created notification (for example, [R2 event notifications](https://developers.cloudflare.com/r2/buckets/event-notifications/), or a webhook on another S3-compatible store). The notification can start a build.
 
-### Compile
+### Builds
 
-Compile is the build pipeline described in [architecture.md](architecture.md#builds): optional steps from the manifest, so an admin can replace or remove any of them.
+A build is the pipeline described in [architecture.md](architecture.md#builds): optional steps from the manifest, so an admin can replace or remove any of them. A build reads the files as they are and validates nothing. Checking is the check tool's job. An admin who wants checked data adds the check tool as a step and puts the steps that need it `after` it.
 
-Compile ingests **only the changed files**.
+A build ingests **only the changed files**.
 
-- It **dedupes by file path and `yafi.seq`**, so a duplicated event does nothing.
-- It **orders by `yafi.seq`**, so out-of-order events still apply correctly.
+- It **dedupes by file path and entry id**, so a duplicated event does nothing.
+- It **reads each file in order**, so out-of-order events still apply correctly.
 - It runs a **periodic sweep** that lists the storage and catches any change whose event was missed.
 
-For each new record, compile validates it against its schema, evaluates the CEL computed values, and writes the results into the derived output.
+For each changed record, a build step can evaluate the CEL computed values and write the results into the derived output.
 
 ### Derived outputs and optional tiers
 
-Compile writes derived outputs. A small project needs only one, rebuilt on demand. A very large read load can use **tiers**, from freshest to most settled.
+A build writes derived outputs. A small project needs only one, rebuilt on demand. A very large read load can use **tiers**, from freshest to most settled.
 
 | Tier | Holds | Why it exists |
 | --- | --- | --- |
@@ -400,14 +313,14 @@ Reads can trail writes by a few seconds. If a project keeps pending records (an 
 
 ### Full replay
 
-Because the files are the truth, compile can discard every derived output and rebuild from the files. The same replay serves audits.
+Because the files are the truth, a build can discard every derived output and rebuild from the files. The same replay serves audits.
 
 ### Exports to everyday tools
 
 The raw files are not meant to be queried from SQL or a spreadsheet directly. Derived outputs and exports provide that access.
 
 - **SQL:** the derived outputs can be SQL-queryable (for example DuckDB or SQLite).
-- **Sheets, Excel, and Drive:** compile can write CSV or spreadsheet exports to a folder those tools read.
+- **Sheets, Excel, and Drive:** a build step can write CSV or spreadsheet exports to a folder those tools read.
 
 ## Schemas
 
@@ -420,20 +333,19 @@ A schema is the full definition of one data type. Schemas are **language-neutral
 
 ### How a write is validated
 
-Schemas are what make the files a cohesive database. Without them the files are only a collection of files. Every write goes through a validate-then-write pipeline in the serverless function (the writer):
+Schemas are what make the files a cohesive database. Without them the files are only a collection of files. Every write passes the enforced checks (see [record-format.md](record-format.md#enforced-checks)), and the schema's part is:
 
-1. **Look up the schema** for the record's data type.
-2. **Check the fields** against the schema's JSON Schema: names, types, allowed values, and required fields. This check is required for every record.
+1. **Look up the schema** for the file's folder in the manifest.
+2. **Check the fields** against the schema's JSON Schema: names, types, allowed values, and required fields. This check is required for every entry.
 3. **Check the extra rules**, if the schema has any, in its CEL expressions (`x-validate`), such as rules that involve more than one field.
-4. **Reject if anything fails.** An invalid record is refused and nothing is written. The writer also rejects any user field named `yafi`, and any duplicate key.
-5. **Set the `yafi` fields and sign it.** The writer sets the `yafi` fields. If chaining is on for this data type, it also sets `yafi.prev`. Then it signs the record (see [Integrity](#integrity)).
-6. **Write it.** The record goes to the end of its file (see [Writes](#writes)).
+4. **Reject if anything fails.** An invalid entry is refused and nothing is written. The writer also rejects any user field named `yafi`, and any duplicate key.
+5. **Sign and write.** The writer signs the entry over the previous signature and writes it with a conditional write (see [Writes](#writes)).
 
-Computed values (`x-computed`) are calculated from the validated records. Official results run in the writer or compile step. See [Where formulas run](#where-formulas-run).
+Computed values (`x-computed`) are calculated from the validated records. Official results run in the writer or a build step. See [Where formulas run](#where-formulas-run).
 
 ### Enforcement is required
 
-Schema enforcement is mandatory and strict. Every record must pass its schema's JSON Schema before it is written, and a record that fails is rejected. A project cannot turn this off. A data type always has a schema, and the schema always has a JSON Schema.
+Schema enforcement is mandatory and strict. Every entry must pass its schema's JSON Schema before it is written, and an entry that fails is rejected. A project cannot turn this off. A data type always has a schema, and the schema always has a JSON Schema.
 
 What the developer chooses is how they write the schemas:
 
@@ -447,7 +359,7 @@ The writer and any other code are TypeScript or JavaScript, running on Node or B
 
 ### Signing and chaining
 
-The writer signs every record it writes, after validation. Chaining is set per data type. A data type with chaining off is still validated and signed, and its records have no `yafi.prev` link. Signing uses Ed25519 by default (see [Integrity](#integrity)).
+The writer signs every entry it writes, after validation. Each signature covers the previous one, so the entries of a file form a chain, with no per-type switch. Signing uses Ed25519 by default (see [Integrity](#integrity)).
 
 ### Where formulas live
 
@@ -458,7 +370,6 @@ Derived values go in an `x-computed` keyword. Optional cross-field rules go in `
 ```yaml
 # examples/schemas/contribution.schema.yaml (abridged)
 $id: contribution
-x-format: yaml/1
 type: object
 properties:
   type: { enum: [cash, time, equipment] }
@@ -513,44 +424,42 @@ A schema change can be recorded and signed like any other record. Git also recor
 
 ### Where formulas run
 
-- **Official results run in the writer or compile step**, using a mature, pinned CEL implementation. Anything official, like a signed snapshot or a cap table export, comes from here.
+- **Official results run in the writer or a build step**, using a mature, pinned CEL implementation. Anything official, like a signed snapshot or a cap table export, comes from here.
 - **Client-side JavaScript may evaluate the same CEL for display.** A client can fake what it shows to itself anyway, so display values need no extra trust. If two implementations ever disagree, that is a defect in an implementation, not a design problem.
 
 ## Integrity
 
-Integrity answers one question: how can anyone tell that a record was not changed, and that no record was removed or reordered?
+Integrity answers one question: how can anyone tell that an entry was not changed, and that no entry was removed or reordered?
 
-Every record the writer writes is signed. Chaining is optional and is set per data type. A ledger turns it on. A weekend project, or a feed of low-value records, can leave it off.
+Every entry the writer writes is signed, and each signature covers the one before it.
 
-### Hash chaining
+### The signature chain
 
-When chaining is on for a data type, each record's `yafi` block holds its sequence number (`seq`) and the hash of the previous record (`prev`). `prev` is the base64url SHA-256 hash of the previous record's canonical JSON (RFC 8785). The records in a file then form a **chain**. Changing any old record changes its hash, which breaks every link after it. This detects edits, deletions, and reordering. A signature on a single record does not detect a deleted or reordered record, so chaining is what covers those cases.
+Each entry's signature is a compact JWS whose claims hold the mode, the time, a hash of the entry's data, and the previous entry's signature. The first entry chains to the header's signature. The entries of a file then form a **chain**. Changing any entry changes its hash and breaks every link after it, so the chain detects edits, deletions, and reordering. See [record-format.md](record-format.md).
 
 ### Signatures
 
-Each record's `yafi.signatures` list holds JOSE signatures in the JSON serialization (RFC 7515, Appendix F, with the payload left out). The signed bytes are the record's canonical JSON (RFC 8785), with `yafi.signatures` left out.
-
 - **Algorithm:** Ed25519, named `Ed25519` in the `alg` header (RFC 9864). The `EdDSA` name is deprecated. Other JOSE algorithms can be configured.
-- **Key:** the protected header names the key with `kid`. Public keys are JWKs (RFC 8037 for OKP keys) in a JWK Set (RFC 7517, section 5).
-- **Writer signature:** the writer signs every record it writes. This shows that the writer validated and wrote the record, and that no one has changed it since.
-- **User signature:** a user who also signs adds a second entry to the list. This shows that the user asked for the action. It is optional.
-- **Shared secrets:** HS256 (RFC 7518) can be used, but a shared secret cannot prove who wrote a record to anyone who holds the secret. A plain hash such as SHA-256 is not enough either, because anyone who edits a file can recompute it.
+- **Key:** the JWS header names the key with `kid`. Public keys are JWKs (RFC 8037 for OKP keys) in a JWK Set (RFC 7517, section 5).
+- **Writer signature:** the writer signs every entry it writes. This shows that the writer validated and wrote the entry, and that no one has changed it since.
+- **User signature (open):** an optional second signature, from a user who asked for the action, is not in the current format.
+- **Shared secrets:** HS256 (RFC 7518) can be used, but a shared secret cannot prove who wrote an entry to anyone who holds the secret. A plain hash such as SHA-256 is not enough either, because anyone who edits a file can recompute it.
 - **Separate keys:** the signing key is kept separate from storage credentials, so storage access alone does not allow forging signed records.
-- **Git-only records** have no writer, so they are not signed. Git history shows who changed them. Authorship is verified only when commits are signed.
+- **Git-only records** have no writer, so they are not signed. Git history shows who changed them. Authorship is verified only when commits are signed. The check tool still checks their structure and schema as a test.
 
-An **index** can be turned on to make verification faster: a small file listing each file's last `seq` and head hash, so a verifier does not have to read every file to check the latest state.
+An **index** can be turned on to make verification faster: a small file listing each file's last signature, so a verifier does not have to read every file to check the latest state.
 
 ### Schema versions and migration
 
-Every record carries its schema name and version in `yafi.schema`, for example `contribution@1`. Old records stay valid under their old schema.
+Every file's header carries its schema name and version, for example `schema: contribution@1`. Old files stay valid under their old schema.
 
-To change a schema in a way that needs rewriting history, the system uses a **migration**: it starts new files. When chaining is on, the first record of each new file is a signed **genesis record**. It names the old chain, and its `yafi.prev` holds the old chain's last hash. The migration script is deterministic and reproducible, so anyone can run it against the old files and get the same new files. A change of record format follows the same pattern (see [Record format](#record-format)).
+To change a schema in a way that needs rewriting history, the system uses a **migration**: it starts new files. The first checkpoint of each new file links to the old file's last signature, the way a prune does. The migration script is deterministic and reproducible, so anyone can run it against the old files and get the same new files. A change of record format follows the same pattern (see [Record format](#record-format)).
 
 ## Write coordination (open decision)
 
 Write coordination answers one question: how do changes stay correct when many things happen at once, as with money?
 
-This is an **open decision**. It is not a setting, and it is not a default. Sagas are the proposed direction. Owners are one option under consideration. Other options, such as a conditional write, are also open. The rest of this section describes the proposal.
+This is an **open decision** for actions that span several accounts. It is not a setting, and it is not a default. Within one file, a conditional write already keeps two writers from overwriting each other (see [Writes](#writes)). Sagas are the proposed direction across accounts. Owners are one option under consideration. The rest of this section describes the proposal.
 
 The proposal fits records that have a clear owner, where two requests for the same record must never run at the same time. A weekend project or a personal ledger with one user would not need it.
 
@@ -582,7 +491,7 @@ Under the proposal, a very busy single account is a one-at-a-time bottleneck. Th
 
 ## API
 
-The write API is the writer. It accepts writes only and serves no reads. Reads go to a derived output, or to the files when compiling is off.
+The write API is the writer. It accepts writes only and serves no reads. Reads go to a derived output, or to the files when no build is set up.
 
 - **Writer code.** The writer is TypeScript or JavaScript on Node or Bun. [Hono](https://hono.dev) runs on both, and on serverless hosts such as Cloudflare Workers, so the same code can move between hosts.
 - **Read routes, if a project adds them.** REST comes first, and its routes are generated from the schemas. REST caches simply and is the easiest to get right.
@@ -630,9 +539,9 @@ The race and partial-failure examples assume the proposed owner and saga design.
 ### Scale notes
 
 - **Writes stay cheap at every size.** A write adds a record to a file, so there is no database on the write path. Adding entities adds files, not load on one database.
-- **Reads scale with the engine you choose.** Derived outputs are read-only, can be rebuilt from the files, and can be copied or cached. Moving to a bigger engine means re-running compile, not changing the files.
+- **Reads scale with the engine you choose.** Derived outputs are read-only, can be rebuilt from the files, and can be copied or cached. Moving to a bigger engine means re-running the build, not changing the files.
 - **Request cost is the pressure point.** Rewriting objects and listing the bucket cost money per request. Batching, time-split files, and shared physical files keep that bounded.
-- **At large scale,** use storage you control near compile, shared physical files for many entities, and the full tier set.
+- **At large scale,** use storage you control near the build, shared physical files for many entities, and the full tier set.
 
 ### Thought experiment: a video site like YouTube
 
@@ -640,7 +549,7 @@ Consider the records of a video site, not the video bytes.
 
 - **Channels, profiles, subscriptions, and video metadata** are owned, low-write records. They fit well.
 - **Comments** are owned records with modest write rates. They fit.
-- **Likes** fit as per-user facts, with counts aggregated by compile.
+- **Likes** fit as per-user facts, with counts aggregated by a build step.
 - **View counts and watch-time telemetry** are firehose data. They do not fit and belong in a streaming pipeline.
 - **The video files themselves** sit in object storage and are referenced by the records.
 
@@ -657,8 +566,8 @@ The setup:
 
 - **One owner** for the cap table. This depends on the open write-coordination decision (see [Write coordination](#write-coordination-open-decision)).
 - **Three schemas:** member, share transaction, and contribution, each with CEL formulas for derived values like slices and percentage of the pie.
-- **Signed, hash-chained** record files in R2. Chaining is set per data type (see [Integrity](#integrity)).
-- **A nightly compile** rebuilds all derived outputs. At this volume, tiers add nothing.
+- **Signed, chained** record files in R2 (see [Integrity](#integrity)).
+- **A nightly build** rebuilds all derived outputs. At this volume, tiers add nothing.
 - **A static site on Cloudflare Pages behind Cloudflare Access.** Cloudflare Access does the sign-in, so no middleware is needed.
 - **Cost:** $0 while idle.
 
@@ -667,9 +576,12 @@ This is the same core idea as the large version, with a single tier. Its single 
 ## Open questions
 
 - **Write coordination:** how concurrent writes to the same file stay correct. Sagas and one owner per account are the proposed direction. Owners on Durable Objects or celld are options under consideration.
-- **Chain hash input:** whether `yafi.prev` hashes the previous record with or without its `yafi.signatures`. The current wording covers only the canonical JSON.
+- **Idempotency keys:** whether entries carry one, so a retry after a success cannot add a second entry.
+- **Rollover and record id:** a file is one record with one id. How a rolled-over file keeps that id is open.
+- **Links to current state:** a link to a field of the current state with no entry id (`#id//field`) is undecided, and the current checks reject it.
+- **User signatures:** whether an entry can carry a second, user signature.
 - **Git as storage:** whether Git can hold records for sites beyond Git-only sites. This stays open (see [Configuration](#configuration)).
 - **Index format:** the exact layout of the optional chain index and of shared physical files at scale.
 - **Key rotation and revocation:** how signing keys change over time and how old signatures stay verifiable.
-- **Schema upgrade strategy:** versioned schemas with upgrade-on-read versus new chains by migration, per data type.
-- **Choice of CEL implementations:** which mature implementation to pin first for the writer and compile step, and which JavaScript port to use in the browser.
+- **Schema upgrade strategy:** versioned schemas with upgrade-on-read versus new files by migration.
+- **Choice of CEL implementations:** which mature implementation to pin first for the writer and build steps, and which JavaScript port to use in the browser.

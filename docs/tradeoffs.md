@@ -4,7 +4,7 @@ This document lists the real costs and risks of the design, so nobody is surpris
 
 ## You own the engine
 
-The configuration loader, the writer, the compile step, the record format code, and the code that generates the API are custom code that you build and run. The optional patterns (chaining, tiers, and write coordination, which is still under consideration) add more. This is the biggest cost. It is acceptable because the core is small, the LLC use case needs only part of the patterns, and the rest can be added later.
+The configuration loader, the writer, the build steps, the record format code, and the code that generates the API are custom code that you build and run. The optional patterns (tiers, and write coordination across accounts, which is still under consideration) add more. This is the biggest cost. It is acceptable because the core is small, the LLC use case needs only part of the patterns, and the rest can be added later.
 
 ## Write coordination may add platform lock-in
 

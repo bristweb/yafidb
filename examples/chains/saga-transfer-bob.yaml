@@ -1,18 +1,11 @@
 # Saga approach: under consideration for write coordination, not a settled design.
-# Chain ledger/bob. Bob's side of transfer t_881. Bob's owner is a different actor from Alice's.
-# User fields are top-level. Yafi's own fields sit under yafi.
+# ledger/bob/t_881.yaml. Bob's side of transfer t_881. Bob's owner is a different actor from Alice's.
+# The signatures are placeholders, not real values.
+schema: ledger-entry@1
+yafi: header@1.0.0 2026-03-02T14:00:00Z eyJhbGciOiJFZDI1NTE5In0...Ej9rVg
 ---
 txn: t_881
 state: apply
 amount: 100
 counterparty: alice
-yafi:
-  schema: ledger-entry@1
-  seq: 17
-  written_at: "2026-03-02T14:00:00Z"
-  idem: req_t881_bob_apply
-  prev: "<base64url SHA-256 of seq 16>"
-  signatures:
-    # Placeholders, not real signatures. The protected header names kid worker-2026-a.
-    - protected: "<base64url protected header>"
-      signature: "<base64url signature>"
+yafi: checkpoint 2026-03-02T14:00:01Z eyJhbGciOiJFZDI1NTE5In0...Fh5tWi

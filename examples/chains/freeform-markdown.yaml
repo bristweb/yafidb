@@ -1,5 +1,8 @@
 # One note record. Text sits in top-level fields as a literal block (|), so Markdown,
-# JSON, YAML, and code need no escaping. Yafi's own fields sit under yafi.
+# JSON, YAML, and code need no escaping. Yafi's own `yafi:` lines hold the mode, time, and signature.
+# The signatures are placeholders, not real values.
+schema: note@1
+yafi: header@1.0.0 2026-03-10T16:00:00Z eyJhbGciOiJFZDI1NTE5In0...Nw4kQz
 ---
 title: Board decision
 body: |
@@ -24,11 +27,4 @@ body: |
   ```ts
   const pct = (mine / total) * 100;
   ```
-yafi:
-  schema: note@1
-  seq: 1
-  written_at: "<RFC 3339 timestamp set by the writer>"
-  signatures:
-    # Placeholders, not real signatures.
-    - protected: "<base64url protected header>"
-      signature: "<base64url signature>"
+yafi: checkpoint 2026-03-10T16:00:01Z eyJhbGciOiJFZDI1NTE5In0...Rt8vXa

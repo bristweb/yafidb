@@ -7,8 +7,8 @@ This log records each decision, the alternatives that were considered and reject
 | # | Decision | Chosen | Main rejected alternative |
 | --- | --- | --- | --- |
 | 1 | Storage backend | Any object storage. Git for Git-only sites. Git as a storage backend beyond those sites is an open question | Git as the only backend |
-| 2 | Record format | Append-only multi-document YAML, set per data type by its schema (today) | A relational database |
-| 3 | Integrity | The writer signs every record (Ed25519 by default). Chaining is off by default and set per data type | Always-on chaining, or none |
+| 2 | Record format | Append-only multi-document YAML, one record per file, versioned on the file's header | A relational database |
+| 3 | Integrity | The writer signs every entry (Ed25519 by default), and each signature covers the one before it | Per-entry signatures with no chain, or chaining as a per-type option |
 | 4 | Schema language | JSON Schema plus CEL | HyperFormula, custom language, SQL, formulas.ts |
 | 5 | Where formulas live | On each schema | One shared formulas file |
 | 6 | Write coordination | Open, not configurable. Owners are one option under consideration | Central worker, 2PC |
@@ -16,22 +16,23 @@ This log records each decision, the alternatives that were considered and reject
 | 8 | Queue storage | A bucket in object storage (R2, S3, or another S3-compatible store) | A key-value store |
 | 9 | API | Hono REST first | GraphQL first |
 | 10 | Official calculation | Signed, pinned CEL, run by the writer or the build | Trust client results |
-| 11 | Schema migration | New files with a signed genesis record | Rewriting history |
+| 11 | Schema migration | New files, the first one naming the last signature of the old file | Rewriting history |
 | 12 | Privacy deletion | Per-user encryption keys | Deleting bytes |
 | 13 | Core idea | Readable files as truth, any database derived from them | Defining the system as one chain per entity |
-| 14 | Record format | Set per data type by its schema, YAML first | Hard-wiring YAML |
+| 14 | Record format | Versioned on each file's header, YAML first | Hard-wiring YAML, a format key in each schema |
 | 15 | Core goals | Easy for AI, low cost, scale when needed, composable | A fixed storage and database stack |
-| 16 | Composition | Configurable parts chosen in one config, with defaults and templates | A fixed stack, or a single bundled backend |
+| 16 | Composition | Configurable parts chosen in the deployment settings and the manifest, with defaults and templates | A fixed stack, or a single bundled backend |
 | 17 | Static site | Static site with optional workers. Git-only publishing for rarely changed sites | None recorded |
 | 18 | Fully static first | No servers, small risk surface, static reads | Self-hosted servers in the default path |
 | 19 | Writer | Minimal write API: accepts writes only, validates, signs, and appends | A writer that also serves reads |
 | 20 | Language and runtime | TypeScript or JavaScript on Node or Bun, as serverless functions | Rust, which needs a separate server to run |
-| 21 | Reserved `yafi` field | User fields at the top level, `yafi` reserved, duplicate keys rejected | A `data:` wrapper, or an `id` field |
-| 22 | Signature format | JOSE (RFC 7515) with Ed25519 (`alg` `Ed25519`, RFC 9864) | Invented signature fields, plain SHA-256 |
+| 21 | Reserved `yafi` name | User fields at the top level of each entry, `yafi` reserved, duplicate keys rejected | A `data:` wrapper, or an `id` field |
+| 22 | Signature format | Compact JOSE (RFC 7515) with Ed25519 (`alg` `Ed25519`, RFC 9864) | Invented signature fields, plain SHA-256 |
 | 23 | Write coordination | Open, not configurable. Sagas proposed, owners under consideration | Central worker, 2PC |
 | 24 | Root, workers, and pipelines | One manifest grants folder authority and defines pipelines. Builds are optional | Builds required, shared write folders, per-hook configuration |
 | 25 | Format version and header | The version rides on the header mode (`header@1.0.0`), matched exactly against the check tool's list. The header holds only `schema` | A `yafi_schema` field, a separate `record_schema` field, version ranges |
 | 26 | The check tool | Validation and quarantine live in one standalone check tool. A worker always runs it before writing. Builds do no validation, and may opt in | Builds that validate or quarantine, a general reader role, skipping files with unknown versions |
+| 27 | Quarantine races | Write the quarantine record, then cut the original with a conditional write, then answer "retry". The record's name comes from a hash of the removed text. On R2, removal is a conditional empty tombstone | Locks, deleting before the record is written, a random record name |
 
 ## 1. Storage backend: any object storage
 
@@ -45,15 +46,17 @@ This log records each decision, the alternatives that were considered and reject
 
 ## 2. Record format: append-only YAML today
 
-**Chosen:** multi-document YAML (`---` separators) with freeform Markdown in `|` block scalars. Each record is appended to the end of its file. A file has no header document and no format key. Each data type's schema sets the record format (see decision 14).
+**Chosen:** multi-document YAML (`---` separators) with freeform Markdown in `|` block scalars. A file is one record. It starts with a header and grows by appended entries, each ending in its own `yafi:` line. The format version rides on the header (see decision 25).
 
-**Why:** a person can read it, diff it, and export it. Block scalars carry Markdown, JSON, YAML, and code without escaping. Export for a user is handing them their file. YAML is the current format. Another format can be set for a data type later, through its schema (see decisions 14 and 16).
+**Why:** a person can read it, diff it, and export it. Block scalars carry Markdown, JSON, YAML, and code without escaping. Export for a user is handing them their file. YAML is the current format. Another format can be added later by a new header version (see decisions 14 and 25).
 
-## 3. The writer signs every record, and chaining is optional per data type
+## 3. The writer signs every entry, and each signature covers the one before
 
-**Chosen:** the writer signs every record it writes, with Ed25519 by default (see decision 22). Chaining adds `prev`, a hash of the previous record. It is off by default and can be turned on per data type. A user may also sign their own entry.
+**Chosen:** the writer signs every entry it writes, with Ed25519 by default (see decision 22). Each signature covers the previous one, so the entries of a file form a chain. There is no per-type switch.
 
-**Why:** ledgers need strong history, while high-volume low-value types should not pay the cost. A per-record signature cannot detect a deleted or reordered record, so chaining is needed for that. The signing key is kept apart from storage credentials, so storage access alone cannot forge signed records.
+**Rejected:** chaining as an option per data type, which an earlier version of this decision chose. Signatures with no chain.
+
+**Why:** a signature on its own cannot detect a deleted or reordered entry, and a chain can. Because the signature is the link, the chain costs no extra field, so there is nothing to save by turning it off. The signing key is kept apart from storage credentials, so storage access alone cannot forge signed records.
 
 ## 4. Schemas: JSON Schema plus CEL
 
@@ -118,7 +121,7 @@ This log records each decision, the alternatives that were considered and reject
 
 ## 11. Schema migration starts new files
 
-**Chosen:** a migration creates new files. With chaining on, the first record is a signed genesis record whose `prev` names the old chain's last hash. The migration script is deterministic and reproducible. Records carry a schema version (`yafi.schema`).
+**Chosen:** a migration creates new files. The first one names the old file and the last signature in it, so the history is linked. The migration script is deterministic and reproducible. A file's header carries its schema version.
 
 **Why:** old history is never rewritten, and anyone can reproduce the migration.
 
@@ -130,19 +133,19 @@ This log records each decision, the alternatives that were considered and reject
 
 ## 13. Readable files are the truth, and any database is derived
 
-**Chosen:** the source of truth is a set of human-readable files in any object storage. Writers do the minimum work: validate, sign, and append. A compile step turns the files into any derived output, such as a database engine, and each derived output is rebuildable. Signing is on for every writer record. Chaining is optional per data type. Write coordination is an open decision (decision 23).
+**Chosen:** the source of truth is a set of human-readable files in any object storage. Writers do the minimum work: validate, sign, and append. Optional build steps turn the files into any derived output, such as a database engine, and each derived output is rebuildable. Signing is on for every writer entry, and each signature covers the one before. Write coordination across accounts is an open decision (decision 23).
 
 **Rejected:** defining the system as one append-only chain per account or entity, with a per-account owner as a required part.
 
-**Why:** the main goal is to remove CPU and server overhead and to keep everything as human-readable files. Scale then comes from deriving a database from the files, so the same design serves a trivial weekend project, personal accounting, banking, and very large systems. Requiring owners and chains for every use would add cost that small uses do not need.
+**Why:** the main goal is to remove CPU and server overhead and to keep everything as human-readable files. Scale then comes from deriving a database from the files, so the same design serves a trivial weekend project, personal accounting, banking, and very large systems. Requiring owners for every use would add cost that small uses do not need.
 
-## 14. The record format is set per data type, and YAML is the first format
+## 14. The record format is versioned on the header, and YAML is the first format
 
-**Chosen:** all records are YAML today. Each data type's schema sets its record format with the keyword `x-format`, for example `x-format: yaml/1`. Files do not declare their own format. Each schema version pins the record format, so the signature covers it. Another format can be added later if someone builds it. Switching a data type to another format is a migration, the same pattern as a schema migration (decision 11). Old records stay readable under the schema version that wrote them.
+**Chosen:** all records are YAML today. The format version rides on each file's header, as `header@1.0.0` (see decision 25). The check tool keeps a list of the versions it supports. Another format can be added later by adding a version to the list, and a file never changes version, so switching a data type to a new format starts new files, the same pattern as a schema migration (decision 11).
 
-**Rejected:** hard-wiring YAML into every part of the system.
+**Rejected:** hard-wiring YAML into every part of the system. A format keyword in each schema (`x-format`), which an earlier version of this decision chose, because the header already carries the version and the signature covers it.
 
-**Why:** YAML fits today for human readability, comments, appendable multi-document files, Markdown in `|` blocks without escaping, and universal parsers. The best format may change over the life of the data, and a format set per schema keeps that change small.
+**Why:** YAML fits today for human readability, comments, appendable multi-document files, Markdown in `|` blocks without escaping, and universal parsers. The best format may change over the life of the data, and a version on each file keeps that change small.
 
 ## 15. Core goals: easy for AI, low cost, scale when needed, composable
 
@@ -160,21 +163,20 @@ This log records each decision, the alternatives that were considered and reject
 
 ## 16. Composable configuration: configurable parts, defaults, and templates
 
-**Chosen:** YafiDB reads and writes the files and makes sure they are structured properly, which is what turns files into a database. Each configurable part is chosen in one configuration file (illustratively `yafidb.yaml`):
+**Chosen:** YafiDB reads and writes the files and makes sure they are structured properly, which is what turns files into a database. Each configurable part is chosen in the deployment settings (illustratively `yafidb.yaml`, outside the data) or, for folders, schemas and pipelines, in the manifest (`/yafi.yaml`):
 
-- **Record format:** set per data type by its schema. YAML today.
+- **Record format:** versioned on each file's header. YAML today.
 - **Storage:** any object storage. Git, for Git-only sites.
 - **Schema language:** JSON Schema, with CEL for computed values.
 - **Signing:** Ed25519 by default. Other JOSE algorithms.
-- **Chaining:** off by default. On per data type.
-- **Derived output:** none by default. A static site, SQLite, a scalable database, or another format.
-- **Where the writer runs:** a serverless function. Another serverless host, or none for Git-only sites.
+- **Derived output:** none by default, made by optional build steps. A static site, SQLite, a scalable database, or another format.
+- **Where workers run:** a serverless function. Another serverless host, or none for Git-only sites.
 
 Write coordination is not configurable. It is an open decision (see decision 23). Schemas are not optional: every data type has one.
 
-**Defaults** are YAML for the record format, any object storage for storage, no derived output, Ed25519 signing, and chaining off. **Templates** prefill the storage, record format, and derived output parts, for example `s3+yaml+none` and `s3+yaml+sqlite` (names illustrative). A user can start from a template or change any part. More options may be added later. This decision neither promises nor rules them out.
+**Defaults** are YAML for the record format, any object storage for storage, no derived output, and Ed25519 signing. **Templates** prefill the storage, record format, and derived output parts, for example `s3+yaml+none` and `s3+yaml+sqlite` (names illustrative). A user can start from a template or change any part. More options may be added later. This decision neither promises nor rules them out.
 
-**Plug-in interfaces** are defined at the interface level only. A record format provides a name and version, reads bytes into records, writes records into bytes, and can add records to a file. A storage backend lists files, reads a file, and writes a file. A compile step names its engine and output, can rebuild from scratch, and never changes the files.
+**Plug-in interfaces** are defined at the interface level only. A record format provides a name and version, reads bytes into records, writes records into bytes, and can add records to a file. A storage backend lists files, reads a file with its version, and writes or removes a file only if it is still at that version (an empty tombstone stands in for removal where a store cannot delete conditionally, see decision 27). A build step names its engine and output, can rebuild from scratch, and never changes the files.
 
 **Git** as a storage backend, beyond Git-only sites, is an open question (see decision 1). Git-only sites keep the records in Git, with no writer (see decision 17).
 
@@ -184,7 +186,7 @@ Write coordination is not configurable. It is an open decision (see decision 23)
 
 ## 17. Static site with optional workers, and Git-only publishing for rarely changed sites
 
-**Chosen:** a key use is a static website, built from the records by a compile step. The default shape is a static site with optional workers. Most of the site is static files that any web host can serve. A minimal write API, run as a few small workers, accepts changes such as form submissions. Each one validates the record, signs it, and writes it to storage. The site is then rebuilt and redeployed. Visitors never reach the workers.
+**Chosen:** a key use is a static website, built from the records by build steps. The default shape is a static site with optional workers. Most of the site is static files that any web host can serve. A minimal write API, run as a few small workers, accepts changes such as form submissions. Each one validates the record, signs it, and writes it to storage. The site is then rebuilt and redeployed. Visitors never reach the workers.
 
 Git-only publishing is adopted for sites that change rarely. The records are YAML files in a Git repository. The author creates and edits them with a local YafiDB tool, which checks each record against its schema. A build runs as a test in the repository, so a bad record fails it. The Git host (GitHub, GitLab, or similar) builds and publishes the site on each push. No write API runs.
 
@@ -216,21 +218,21 @@ The build can run in CI, or YafiDB can commit the generated site to a publish re
 
 **Why:** serverless functions keep the default path free of servers (decision 18). Because schemas are language-neutral, the language choice does not change the files.
 
-## 21. The top-level `yafi` field is reserved for Yafi
+## 21. The name `yafi` is reserved for Yafi
 
-**Chosen:** user data fields sit at the top level, as the schema defines them. The top-level key `yafi` is reserved for Yafi. Inside it, Yafi sets `schema`, `seq`, `written_at`, and `signatures`, and optionally `idem` and `prev`. The writer rejects any user field named `yafi`, and rejects duplicate keys. A record is identified by its file path and `yafi.seq`.
+**Chosen:** an entry's user fields sit at the top level, as the schema defines them. Yafi's own data lives on the entry's `yafi:` line (mode, time, signature), so a user field cannot be named `yafi`. The writer and the check tool reject that field and reject duplicate keys. A record is identified by its id, the first 22 characters of its header signature, and a file's path.
 
 **Rejected:** a `data:` wrapper around user fields, and a separate `id` field.
 
-**Why:** top-level fields are easy to read and write, and a reserved key keeps Yafi's fields apart from user fields. Duplicate keys are rejected because some parsers silently keep only the last of two identical keys.
+**Why:** top-level fields are easy to read and write, and a reserved name keeps Yafi's line apart from user fields. Duplicate keys are rejected because some parsers silently keep only the last of two identical keys.
 
 ## 22. Signatures use JOSE (RFC 7515), with Ed25519
 
-**Chosen:** `yafi.signatures` is a list of signatures in the JOSE JSON serialization (RFC 7515). The writer's signature is detached, with the payload member omitted (RFC 7515, Appendix F). The signed bytes are the record's canonical JSON (RFC 8785), excluding `yafi.signatures`. The protected header carries `alg` and `kid`. Ed25519 uses the `alg` value `Ed25519` (RFC 9864). The value `EdDSA` is deprecated. Public keys are JWKs (RFC 8037 for OKP keys) in a JWK Set (RFC 7517, section 5). A user who also signs adds a second entry to the list.
+**Chosen:** each entry's `yafi:` line ends in a compact JWS (RFC 7515) with a detached payload (RFC 7515, Appendix F). The signed claims are the versioned mode, the time, a hash of the entry's canonical JSON (RFC 8785), and the previous signature. The protected header carries `alg` and `kid`. Ed25519 uses the `alg` value `Ed25519` (RFC 9864). The value `EdDSA` is deprecated. Public keys are JWKs (RFC 8037 for OKP keys) in a JWK Set (RFC 7517, section 5).
 
 **Rejected:** invented signature fields. A plain SHA-256 hash, since anyone who edits a file can recompute it. HS256 as proof of authorship, since a shared secret cannot prove who wrote a record to anyone who holds it. HS256 remains a configurable option.
 
-**Why:** a standard format lets a verifier find the key by `kid` in a JWK Set. A public key can verify a signature without being able to make one. A signature alone cannot show that a record was deleted or reordered, which is what chaining is for (decision 3).
+**Why:** a standard format lets a verifier find the key by `kid` in a JWK Set. A public key can verify a signature without being able to make one. Because each signature covers the previous one, the chain also shows a deleted or reordered entry (decision 3).
 
 ## 23. Write coordination is open, and not configurable
 
@@ -264,11 +266,26 @@ The build can run in CI, or YafiDB can commit the generated site to a publish re
 
 **Why:** records are often converted and published, so the only things that read the YAML may be a worker or a build. Putting all validation in one tool keeps one place to trust, and keeps builds simple. Whoever wants checked data asks the tool for it, and the same quarantine rules apply however it is run.
 
+## 27. Quarantine races are settled by conditional writes, with no locks
+
+**Chosen:** when a check finds corrupt data, the order is fixed: write the quarantine record, cut or remove the original with a conditional write on the version that was read, then answer "retry". The record's name comes from a hash of the removed text, so two checks of the same bytes make one record. The check that loses the conditional cut re-reads and carries on with the file as it is. A crash between the steps is finished by the next check. Where a store cannot delete conditionally, which includes Cloudflare R2, removal is a conditional overwrite with an empty tombstone that reads as absent and is not listed. Two valid appends to one file are settled by the same conditional write: one succeeds, the other gets a conflict with nothing written, and a success always means the entry is in the file.
+
+**Rejected:**
+
+- **Locks.** They need a service that holds them, and a crashed holder leaves the file stuck.
+- **Deleting first.** A crash after the delete and before the record loses the data.
+- **A random record name.** Two checks would make two records for the same bytes.
+- **An unconditional delete on R2.** R2's Workers `delete()` takes no condition, and its [S3 compatibility page](https://developers.cloudflare.com/r2/api/s3/api/) lists conditional headers only for HeadObject, GetObject, and PutObject. A conditional delete header was documented briefly in April 2026 and is not on the current page, so nothing relies on it. AWS S3 supports [conditional deletes](https://docs.aws.amazon.com/AmazonS3/latest/userguide/conditional-deletes.html), and the S3 storage uses them.
+
+**Why:** the record is written before anything is removed, so the data is never lost, and the conditional cut means a new write that landed in between is never cut. The details are in [record-format.md](record-format.md#concurrent-writes).
+
 ## Open questions
 
 - **Git as a storage backend.** Git was once a supported backend for small projects, because it is free, keeps a commit log, and could even host the engine that runs it. It is now under reconsideration, beyond Git-only sites. The concerns are that git is slow for writes, that GitHub has outages, and that concurrent pushes conflict. Each backend also adds complexity to support. Object storage may be enough on its own. Until this is settled, the default is any object storage, and Git is used for Git-only sites.
 - **Write coordination (decision 23).** Sagas are the proposed direction, and owners are one option under consideration. Whether either is chosen is open.
 - **Write queue (decision 8).** The writer appends to files directly. Whether a write queue is still needed is open.
+- **Linking to a field of the current state (`#id//field`).** A link with no entry id is undecided, and the current checks reject it.
+- **Rollover and record id.** A file is one record with one id, so a rollover to a new file raises how the new file ties to the old one.
 - **Official values (decision 10).** Decision 10 says the writer or the build computes official values. Confirm which one, or both.
 
 ## File rollover

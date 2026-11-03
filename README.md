@@ -74,31 +74,20 @@ flowchart LR
 
 ## Architecture
 
-A deployment is a **root**: one manifest, `/yafi.yaml`, plus the folders it governs. The manifest gives each **worker** sole write authority over its own folders and maps every folder to one schema. Workers may read anywhere in the root, so they can check references and permissions. Writes and builds run as **pipelines** of steps in any language, and any step can be replaced. A standalone **check tool** verifies files and quarantines what is wrong. A worker always runs it before writing, and a build can run it as an opt-in step.
+A deployment is a **root**: one manifest, `/yafi.yaml`, plus the folders it governs. The manifest gives each **worker** sole write authority over its own folders, so no two workers share or nest folders. Each folder has exactly one schema, and one schema can cover many folders. Workers may read anywhere in the root, so they can check references and permissions.
 
 ```mermaid
-flowchart LR
-    M["/yafi.yaml<br/>manifest"] --> W[Workers<br/>one writer per folder]
-    M --> P[Pipelines<br/>write checks, build steps]
-    W --> F[(Record files)]
-    F --> B[Build<br/>optional]
-    W --> K[Check tool<br/>before every write]
-    K -.wrong.-> Q[Quarantine worker]
-    B -.opt-in.-> K
+flowchart TB
+    M["/yafi.yaml<br/>manifest"]
+    M --> W1[Worker: crm]
+    M --> W2[Worker: shop]
+    W1 -->|writes| F1["/customer/<br/>schema customer@1"]
+    W1 -->|writes| F2["/lead/<br/>schema customer@1"]
+    W2 -->|writes| F3["/order/<br/>schema order@1"]
+    W2 -.reads.-> F1
 ```
 
-Terms, the manifest format, and the check, build and quarantine flows are in [docs/architecture.md](docs/architecture.md).
-
-## How writes are validated
-
-```mermaid
-flowchart LR
-    R[Write request] --> C{Enforced checks<br/>Yafi, plus any plugged in}
-    C -->|pass| F[(Write)]
-    C -->|fail| X[No write]
-```
-
-A write that succeeds is always in the file. A write that loses a race to another writer, or to a quarantine, is refused with nothing written, and a retry builds on the winner. No locks are used. The full list of checks is in [docs/record-format.md](docs/record-format.md#enforced-checks), and the races are in [Concurrent writes](docs/record-format.md#concurrent-writes).
+Before a worker writes, its write checks run: Yafi's own checks plus any that are plugged in. If they pass, the write happens. If they fail, nothing is written. Quarantine is just one effect of the checks: data found to be wrong is logged to quarantine before the file is fixed or removed. A write that succeeds is always in the file. A write that loses a race is refused with nothing written, and no locks are used. Terms and the manifest format are in [docs/architecture.md](docs/architecture.md), the checks are in [docs/record-format.md](docs/record-format.md#enforced-checks), and the races are in [Concurrent writes](docs/record-format.md#concurrent-writes).
 
 ## Goals
 

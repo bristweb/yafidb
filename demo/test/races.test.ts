@@ -162,23 +162,24 @@ describe("whole-file quarantine", () => {
     expect(err.status).toBe(409);
   });
 
-  test("if the delete fails, the write is refused; the next write logs again (a no-op for the same bytes) and deletes", async () => {
+  test("a failed delete changes nothing about the outcome: the file is quarantined and the write answers retry, and the next check finds the file again", async () => {
     const { ctx, dir } = await makeEnv();
     await junk(dir, "name: forged\n");
     const broken = failing(ctx, "delete", (p) => p === P);
     const err = await rejects(createRecord(broken, { path: P, schema: "customer@1", data: { name: "Alice", email: "a@example.com" } }));
     expect(err.status).toBe(409);
-    expect(await readData(dir, P)).toBe("name: forged\n");   // still there
-    expect(await quarantined(dir)).toHaveLength(1);           // but already logged
+    expect(err.message).toContain("retry");                   // the same answer as when the delete works
+    expect(await readData(dir, P)).toBe("name: forged\n");   // the file is still there
+    expect(await quarantined(dir)).toHaveLength(1);           // and already logged
     const first = (await quarantined(dir))[0];
 
-    const done = moved(await checkPath(ctx, P));
+    const done = moved(await checkPath(ctx, P));              // the next check finds it again, same record, and deletes
     expect(done[0].quarantinePath).toBe(`/quarantine/${first}`);
-    expect(await quarantined(dir)).toEqual([first]);          // same bytes, same record
+    expect(await quarantined(dir)).toEqual([first]);
     expect(await ctx.storage.get(P)).toBeNull();
   });
 
-  test("if the file changes after a failed delete, the next check logs the new content too", async () => {
+  test("if the file is still there and has changed, the next check logs the new content too", async () => {
     const { ctx, dir } = await makeEnv();
     await junk(dir, "name: forged\n");
     await checkPath(failing(ctx, "delete", (p) => p === P), P);

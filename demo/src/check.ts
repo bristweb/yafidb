@@ -18,7 +18,7 @@ export type CheckResult =
 
 /**
  * Checks one file. Pass `file` if it was just read, so the check sees exactly what the caller sees.
- * If the file changed while it was being quarantined, nothing was changed: it is read again and checked afresh,
+ * If a newer write beat the overwrite of a partly bad file, nothing was changed: it is read again and checked afresh,
  * so the result always describes the file as it is now.
  */
 export async function checkFile(ctx: WriterContext, path: string, file?: { body: string; version: string } | null): Promise<CheckResult> {

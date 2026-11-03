@@ -1,12 +1,12 @@
 // Quarantine: moves corrupt data to the quarantine worker. It is part of the check tool (check.ts) and nothing else calls it.
 // One rule for both cases: the problem data is logged to quarantine first, and only once that succeeds is the original
 // changed. No locks. The record's path comes from a hash of the logged text, so repeating a quarantine of the same bytes
-// finds the record and adds none. If the change to the original fails or is cut short, the next check logs again
-// (a no-op for the same bytes, a new record if the file changed meanwhile) and retries it.
+// finds the record and adds none. If the file is still there at the next check, that check logs again (a no-op for the
+// same bytes, a new record if the file changed meanwhile) and retries.
 //   - a file that fails part-way keeps its verified entries; the tail is logged, then the file is overwritten with the
 //     verified part (a conditional write on the version that was read)
 //   - a file with no verified header (including an unsupported version), or the wrong schema for its folder, is logged
-//     whole, then deleted (a plain delete)
+//     whole, then a plain delete is attempted and its result is ignored
 import type { WriterContext } from "./checks.ts";
 import type { VerifyResult } from "./format.ts";
 import { quarantineTarget } from "./manifest.ts";
@@ -17,7 +17,7 @@ import { createRecord } from "./writer.ts";
 
 export type QuarantineResult =
   | { quarantinePath: string; followUps: Record<string, string> }
-  | { lost: true }          // the file changed after it was read, so nothing was changed: read and check it again
+  | { lost: true }          // the overwrite lost to a newer write, so nothing was changed: read and check it again
   | { skipped: string };
 
 /** `keepPrefix`: the file has a verified prefix worth keeping. Otherwise the whole file is moved. */
@@ -44,10 +44,8 @@ export async function quarantineFile(
   }
 
   if (whole) {
-    // A plain delete takes no condition, so look once more first: a file that changed since it was read is checked afresh.
-    if ((await ctx.storage.get(path))?.version !== file.version) return { lost: true };
-    try { await ctx.storage.delete(path); }
-    catch (e: any) { return { skipped: `logged to ${quarantinePath}, but the delete failed: ${e.message}` }; }
+    // Only an attempt: nothing depends on the result. If the file is still there, the next check finds it again.
+    await ctx.storage.delete(path).catch(() => {});
   } else {
     const prefix = file.body.slice(0, v.validEnd);
     if (!(await ctx.storage.putIfMatch(path, prefix.endsWith("\n") ? prefix : prefix + "\n", file.version)).ok) return { lost: true };

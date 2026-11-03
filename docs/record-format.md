@@ -79,7 +79,7 @@ One rule covers both cases: the problem data is logged to quarantine first, and 
 2. Once that write succeeds, a partly bad file is overwritten with its verified part, with a conditional write so nothing new is lost. A wholly bad file is deleted.
 3. The write that triggered the check is refused with a retry. Writes resume from there. No admin is needed.
 
-If the quarantine write fails, the original is not touched. If the overwrite or delete fails, the next check logs the file again and retries it. Same bytes find the same record, because its name comes from a hash of the logged text (`/quarantine/<source path>-<first 16 hex of the SHA-256>.yaml`), so nothing is logged twice. A file that changed in between is logged as new content.
+If the quarantine write fails, the original is not touched. For a wholly bad file the delete is only an attempt, and nothing depends on its result. If the file is still there, the next check finds it again and logs it again. Same bytes find the same record, because its name comes from a hash of the logged text (`/quarantine/<source path>-<first 16 hex of the SHA-256>.yaml`), so nothing is logged twice. A file that changed in between is logged as new content.
 
 ```yaml
 schema: quarantine@1
@@ -115,5 +115,4 @@ Only Yafi signs and appends. A success always means the entry is in the file. A 
 No locks. Every entry is written with a conditional write on the version that was read, so a write either lands or is refused with the file as it was.
 
 - **Two valid appends:** both read the same version, and the store lets one write through. The other gets a conflict (409, or 412 from the store), and nothing of it is written. It re-reads and retries, and its entry chains to the winner's.
-- **Two checks find the same corrupt file:** both log the same bytes to the same record, so there is one record. A partly bad file is overwritten by whichever conditional write lands first, and the other re-reads and checks again. A wholly bad file is deleted by either, and a delete of a file already gone is not an error. The caller of a check that changed the file gets "retry".
-- **A file that changes before the delete:** a plain delete takes no condition, so the check reads the file once more first and starts again if it no longer matches. A change landing between that read and the delete is not covered.
+- **Two checks find the same corrupt file:** both log the same bytes to the same record, so there is one record. A partly bad file is overwritten by whichever conditional write lands first, and the other re-reads and checks again. A wholly bad file is deleted by either, and a delete of a file already gone is not an error. The delete takes no condition, so it can remove a file that a writer created in the meantime. The caller of a check that quarantined something gets "retry".

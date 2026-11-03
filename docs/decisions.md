@@ -31,7 +31,7 @@ This log records each decision, the alternatives that were considered and reject
 | 23 | Write coordination | Open, not configurable. Sagas proposed, owners under consideration | Central worker, 2PC |
 | 24 | Root, workers, and pipelines | One manifest grants folder authority and defines pipelines. Builds are optional | Builds required, shared write folders, per-hook configuration |
 | 25 | Format version and header | The version rides on the header mode (`header@1.0.0`), matched exactly against the check tool's list. The header holds only `schema` | A `yafi_schema` field, a separate `record_schema` field, version ranges |
-| 26 | The check tool | Validation and quarantine live in one standalone check tool. Problem data is logged to quarantine first, then the original is overwritten or deleted. A worker always runs it before writing. Builds do no validation, and may opt in | Builds that validate or quarantine, a general reader role, skipping files with unknown versions |
+| 26 | The check tool | Validation and quarantine live in one standalone check tool. Problem data is logged to quarantine first, then the original is overwritten (partial) or a delete is attempted (whole). A worker always runs it before writing. Builds do no validation, and may opt in | Builds that validate or quarantine, a general reader role, skipping files with unknown versions |
 
 ## 1. Storage backend: any object storage
 
@@ -259,7 +259,7 @@ The build can run in CI, or YafiDB can commit the generated site to a publish re
 
 ## 26. The check tool
 
-**Chosen:** the enforced checks (version, signatures and chain, folder schema) and quarantine form one standalone tool, the check tool, which can run alone as a command. Anything that runs it automatically quarantines what is wrong, through the quarantine worker. The rule is the same for a file that is partly or wholly bad: the problem data is logged to quarantine first, and only after that succeeds is the original overwritten (partial) or deleted (whole). A worker always runs it on a file before writing. A build does no validation or quarantine and only reads files and runs steps. An admin may add the check tool to a build as an ordinary opt-in step, and put the steps that need checked data `after` it. The shipped build steps read files as they are.
+**Chosen:** the enforced checks (version, signatures and chain, folder schema) and quarantine form one standalone tool, the check tool, which can run alone as a command. Anything that runs it automatically quarantines what is wrong, through the quarantine worker. The rule is the same for a file that is partly or wholly bad: the problem data is logged to quarantine first, and only after that succeeds is the original overwritten (partial) or a delete attempted (whole). A worker always runs it on a file before writing. A build does no validation or quarantine and only reads files and runs steps. An admin may add the check tool to a build as an ordinary opt-in step, and put the steps that need checked data `after` it. The shipped build steps read files as they are.
 
 **Rejected:** a general reader role that validates or quarantines. Builds that verify or quarantine by default. A build-side report of problems. Skipping a file with an unknown version, which would leave an unusable file in a worker folder instead of recovering it.
 

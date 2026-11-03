@@ -171,8 +171,8 @@ flowchart LR
 
 - One rule for both cases: the problem data is logged to quarantine first, and only after that succeeds is the original changed. If the log fails, the original is left alone.
 - A file that fails mid-way keeps its verified entries. Everything after the break is logged, then the original is overwritten with the verified part, with a conditional write.
-- A file with no verified header, or that holds a different schema than its folder, is logged whole, then deleted. A header version the tool does not support counts here, like any other corruption. So does any file in a worker folder that did not come through its worker.
-- The record's name comes from a hash of the logged text, so repeating a quarantine adds nothing. If the overwrite or delete fails, the next check logs again and retries it. No locks are used.
+- A file with no verified header, or that holds a different schema than its folder, is logged whole, then a delete is attempted. A header version the tool does not support counts here, like any other corruption. So does any file in a worker folder that did not come through its worker.
+- The record's name comes from a hash of the logged text, so repeating a quarantine adds nothing. A delete is only an attempt: if the file is still there, the next check logs it again and tries again. No locks are used.
 - An admin can keep this behavior, replace it, or add steps to the `quarantine` pipeline, such as alerts. Those steps run after the move and cannot undo it.
 
 The record layout is in [record-format.md](record-format.md#broken-or-corrupted-files), and the races are in [record-format.md](record-format.md#concurrent-writes). Versions are in [record-format.md](record-format.md#format-versions).

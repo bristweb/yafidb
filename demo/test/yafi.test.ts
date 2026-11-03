@@ -378,7 +378,7 @@ describe("storage backends and formats", () => {
         const etag = `e${++n}`; kv.set(k, { body: v, etag }); return { etag };
       },
       async delete(k: string) { kv.delete(k); },
-      async list() { return { objects: [...kv.keys()].map((key) => ({ key })), truncated: false }; },
+      async list() { return { objects: [...kv].map(([key, o]) => ({ key, size: o.body.length })), truncated: false }; },
     };
     const { privateJwk, publicJwk } = await generateKeyPair("w");
     const schema = (await import("yaml")).default.parse(await readFile(join(root, "schemas/customer@1.schema.yaml"), "utf8"));

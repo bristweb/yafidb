@@ -93,7 +93,7 @@ flowchart LR
 - **The check tool** runs on the file first. See [The check tool](#the-check-tool).
 - **Yafi's checks** run next. They are listed in [record-format.md](record-format.md#enforced-checks).
 - **Write checks** are the admin's own steps, in any language. A step is a command or an HTTP endpoint. It receives the proposed entry and the existing file, never the database, and it answers pass or fail. Steps with no `after` run together, and a step runs only once everything it follows has passed. Any failure rejects the write.
-- Only Yafi signs and appends.
+- Only Yafi signs and appends. The write is conditional on the version read, so of two simultaneous valid appends one succeeds and the other gets a conflict with nothing written. A success always means the entry is in the file. See [Concurrent writes](record-format.md#concurrent-writes).
 
 Any path outside every worker folder, including the manifest itself, is refused. Changing the manifest is an admin action.
 
@@ -164,13 +164,16 @@ Quarantine is a schema, `quarantine@1`, owned by its own worker. Only the check 
 ```mermaid
 flowchart LR
     F[Check finds<br/>corrupt data] --> Q[Quarantine worker<br/>writes a quarantine record]
-    Q -->|write succeeded| T[Remove it from the original]
+    Q -->|record written| T[Conditional cut<br/>of the original]
+    T --> R[Answer retry]
     T --> N[Quarantine pipeline<br/>for example, an alert]
 ```
 
 - A file that fails mid-way keeps its verified entries. Everything after the break moves to quarantine, and the original is cut back with a conditional write.
 - A file with no verified header, or that holds a different schema than its folder, moves whole and is removed. A header version the tool does not support counts here, like any other corruption. So does any file in a worker folder that did not come through its worker.
-- The data is removed from the original only after the quarantine write succeeds, so it exists in exactly one place.
+- The data is removed from the original only after the quarantine write succeeds, so it is never lost. The cut is a conditional write on the version that was read, so a new write that landed in between is never cut.
+- The record's name comes from a hash of the removed text. Two checks of the same corrupt file make one record, and the one that loses the cut re-reads and carries on. A crash between the steps is finished by the next check. No locks are used.
+- Where a store cannot delete conditionally, such as Cloudflare R2, removal is a conditional overwrite with an empty tombstone, which reads as absent.
 - An admin can keep this behavior, replace it, or add steps to the `quarantine` pipeline, such as alerts. Those steps run after the move and cannot undo it.
 
-The record layout is in [record-format.md](record-format.md#broken-or-corrupted-files). Versions are in [record-format.md](record-format.md#format-versions).
+The record layout is in [record-format.md](record-format.md#broken-or-corrupted-files), and the races are in [record-format.md](record-format.md#concurrent-writes). Versions are in [record-format.md](record-format.md#format-versions).

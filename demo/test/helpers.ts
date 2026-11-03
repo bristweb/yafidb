@@ -63,3 +63,39 @@ export async function rejects<T>(p: Promise<T>) {
   try { await p; } catch (e: any) { return e; }
   throw new Error("expected the write to be rejected");
 }
+
+/** An in-memory R2 bucket binding: put honours onlyIf, delete takes no precondition. */
+export function fakeR2() {
+  const kv = new Map<string, { body: string; etag: string }>();
+  let n = 0;
+  const bucket = {
+    async get(k: string) { const o = kv.get(k); return o ? { text: async () => o.body, etag: o.etag } : null; },
+    async put(k: string, v: string, o?: { onlyIf?: { etagMatches?: string; etagDoesNotMatch?: string } }) {
+      await Promise.resolve();
+      const cur = kv.get(k);
+      if (o?.onlyIf?.etagDoesNotMatch === "*" && cur) return null;
+      if (o?.onlyIf?.etagMatches && cur?.etag !== o.onlyIf.etagMatches) return null;
+      const etag = `e${++n}`; kv.set(k, { body: v, etag }); return { etag };
+    },
+    async delete(k: string) { kv.delete(k); },
+    async list() { return { objects: [...kv].map(([key, o]) => ({ key, size: o.body.length })), truncated: false }; },
+  };
+  return { kv, bucket };
+}
+
+/** Wraps a storage so the first `n` calls of `method` on `path` all wait until `n` of them have arrived. Forces an interleaving. */
+export function gated<S extends object>(storage: S, method: "get" | "putIfMatch" | "deleteIfMatch", path: string, n: number): S {
+  let arrived = 0;
+  let open!: () => void;
+  const door = new Promise<void>((r) => (open = r));
+  return new Proxy(storage, {
+    get(t: any, k) {
+      const v = t[k];
+      if (k !== method) return typeof v === "function" ? v.bind(t) : v;
+      return async (p: string, ...rest: unknown[]) => {
+        if (p === path && arrived < n && ++arrived <= n) { if (arrived === n) open(); await door; }
+        return v.call(t, p, ...rest);
+      };
+    },
+  });
+}

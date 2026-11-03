@@ -47,10 +47,10 @@ YafiDB's ✅ marks are the design goals. Each one has a condition worth knowing.
 - **Files:** records are YAML documents appended to files in object storage.
 - **Schema:** the schema is mandatory and strict. The writer rejects any record that fails it.
 - **Write API:** a small writer runs as a serverless function. You deploy it, but you do not write it.
-- **No server:** the writer runs only when a change arrives. Reads go to files or a compiled output, so no server sits in the read path.
+- **No server:** the writer runs only when a change arrives. Reads go to files or a derived output, so no server sits in the read path.
 - **Free + FOSS:** the parts are free and open source. Storage and hosting have their own free tiers, which you may outgrow.
 - **Portable:** any S3-compatible store works. Moving means copying files.
-- **Tamper:** signing is always on for writer-made records. Hash chaining is optional per data type.
+- **Tamper:** signing is always on for writer-made records. Each signature covers the previous one, so entries are chained.
 - **Compile:** a static site, SQLite, or another database can be rebuilt from the files at any time.
 
 ## The tables
@@ -245,10 +245,10 @@ These win on ease for people who do not write code. They are hosted or server-ba
 
 The columns above favor YafiDB's goals. These are the things they do not measure, and YafiDB is weaker on most of them.
 
-- **Query power.** The files alone answer simple reads. Joins, aggregates, and search need a compiled database such as SQLite or DuckDB.
+- **Query power.** The files alone answer simple reads. Joins, aggregates, and search need a derived database such as SQLite or DuckDB.
 - **Transactions.** A write changes one record in one file. Changes that must succeed together across many records are a harder fit.
 - **Write volume.** Every write rewrites a small file in object storage, and request costs grow with write frequency. Rollover to new files keeps each file small, but it does not make YafiDB a stream processor.
-- **Freshness.** Reads from a compiled output can trail writes by a few seconds.
+- **Freshness.** Reads from a derived output can trail writes by a few seconds.
 - **Real-time and offline collaboration.** Tools such as Automerge, RxDB, and Electric SQL are built for this. YafiDB is not.
 - **Maturity.** Every other tool here has users and a track record. YafiDB is a design.
 - **Tooling.** Dashboards, drivers, and hosting support for the others are far ahead.

@@ -1,35 +1,13 @@
-# Chain contribution/alice, year 2026. Each record is a YAML document, separated by ---.
-# User fields are top-level. Yafi's own fields sit under yafi.
-# A user who also signs adds a second entry to signatures.
+# One member record and its history: a header, a checkpoint, and a patch.
+# Each `yafi:` line holds the mode, the time, and a compact signature. The signature covers the
+# previous signature, so editing, removing, or reordering an entry breaks every link after it.
+# The signatures are placeholders, not real values.
+schema: member@1
+yafi: header@1.0.0 2026-01-05T15:02:10Z eyJhbGciOiJFZDI1NTE5In0...Hn4sW7
 ---
-type: cash
-amount: 5000
-note: |
-  Initial investment, wired 2026-01-05.
-yafi:
-  schema: contribution@1
-  seq: 1
-  written_at: "2026-01-05T15:02:11Z"
-  idem: req_7f3a            # idempotency key: a retry with the same key is ignored
-  prev: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"  # all zeros: no previous record
-  signatures:
-    # Placeholders, not real signatures. The protected headers name kid worker-2026-a and alice-2026.
-    - protected: "<base64url protected header>"
-      signature: "<base64url signature>"
-    - protected: "<base64url protected header>"
-      signature: "<base64url signature>"
+name: Alice
+email: alice@example.com
+yafi: checkpoint 2026-01-05T15:02:11Z eyJhbGciOiJFZDI1NTE5In0...9fQk2x
 ---
-type: time
-hours: 12
-hourly_rate: 100
-note: |
-  Built the first prototype.
-yafi:
-  schema: contribution@1
-  seq: 2
-  written_at: "2026-01-09T20:41:55Z"
-  idem: req_9b21
-  prev: "<base64url SHA-256 of seq 1>"
-  signatures:
-    - protected: "<base64url protected header>"
-      signature: "<base64url signature>"
+email: alice@example.org
+yafi: patch 2026-06-09T20:41:55Z eyJhbGciOiJFZDI1NTE5In0...Lm3vQa

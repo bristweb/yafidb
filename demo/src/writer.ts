@@ -50,11 +50,16 @@ async function commit(ctx: WriterContext, path: string, base: string, expected: 
   return { path, record_id: after.header!.id, entry_id: after.entries.at(-1)!.id, version: put.version };
 }
 
-/** The worker always runs the check on a file before writing to it. Anything wrong is quarantined, the write is refused, and a retry works. */
-async function refuseIfWrong(ctx: WriterContext, path: string, f: { body: string; version: string }) {
+/**
+ * The worker always runs the check on a file before writing to it. A file the check had to quarantine refuses the write
+ * (409, retry). If another check got there first, the check re-reads, and the write goes on against the file as it is now.
+ * Returns that file, or null if it no longer exists.
+ */
+async function checked(ctx: WriterContext, path: string, f: { body: string; version: string }) {
   const c = await checkFile(ctx, path, f);
   if (c.status === "quarantined" || c.status === "failed")
     throw new WriteError("existing", `existing file does not verify: ${c.reason}${c.status === "quarantined" ? `; moved to ${c.quarantinePath}, retry` : ` (${c.skipped})`}`, 409);
+  return c.status === "ok" ? c.file : null;
 }
 
 export async function createRecord(ctx: WriterContext, req: { path: string; schema?: string; data: any }): Promise<WriteResult> {
@@ -62,10 +67,7 @@ export async function createRecord(ctx: WriterContext, req: { path: string; sche
   if (req.schema !== undefined && req.schema !== schema)
     throw new WriteError("authority", `${req.path} uses ${schema}, not ${req.schema}`, 403);
   const existing = await ctx.storage.get(req.path);
-  if (existing) {
-    await refuseIfWrong(ctx, req.path, existing);
-    throw new WriteError("write", `${req.path} already exists`, 409);
-  }
+  if (existing && (await checked(ctx, req.path, existing))) throw new WriteError("write", `${req.path} already exists`, 409);
   return commit(ctx, req.path, await headerText(ctx, schema), null, { mode: "checkpoint", data: req.data }, schema);
 }
 
@@ -74,6 +76,7 @@ export async function appendEntry(ctx: WriterContext, req: { path: string; mode:
   if (!MODES.includes(req.mode)) throw new WriteError("request", `mode must be one of ${MODES.join(", ")}`, 400);
   const f = await ctx.storage.get(req.path);
   if (!f) throw new WriteError("request", `${req.path} does not exist`, 404);
-  await refuseIfWrong(ctx, req.path, f);
-  return commit(ctx, req.path, f.body, f.version, { mode: req.mode, data: req.data }, schema);
+  const now = await checked(ctx, req.path, f);
+  if (!now) throw new WriteError("request", `${req.path} does not exist`, 404);
+  return commit(ctx, req.path, now.body, now.version, { mode: req.mode, data: req.data }, schema);
 }

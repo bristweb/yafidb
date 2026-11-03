@@ -4,7 +4,7 @@ This document lists related projects, what each one shows, and how this design d
 
 ## Summary of the difference
 
-No project found combines all of these: **readable, appendable record files**, **thin writers that only validate, sign, and append**, **derived outputs of any kind rebuilt from the files**, **any object storage**, **signing with optional hash chaining**, and **free and open-source software only**. Each project below covers part of that.
+No project found combines all of these: **readable, appendable record files**, **thin writers that only validate, sign, and append**, **derived outputs of any kind rebuilt from the files**, **any object storage**, **signing, with every entry chained to the one before it**, and **free and open-source software only**. Each project below covers part of that.
 
 ## Tamper-evident logs and ledgers
 
@@ -27,7 +27,7 @@ These systems publish large append-only logs as static files, which is the same 
 | [Cloudflare Azul](https://blog.cloudflare.com/azul-certificate-transparency-log/) | Cloudflare's certificate transparency log built on Workers, Durable Objects, and R2 |
 | [Sigstore Rekor v2](https://blog.sigstore.dev/rekor-v2-ga/) | A tile-based transparency log for software signing |
 
-Lesson: object storage with conditional writes and a single sequencer per log works at very large scale. Those logs hold a Merkle tree for public proofs. Chaining in this design is optional per data type and simpler: a hash chain, because the audience is the data's owner and an auditor, not the public.
+Lesson: object storage with conditional writes and a single sequencer per log works at very large scale. Those logs hold a Merkle tree for public proofs. Chaining in this design is always on and simpler: each signature covers the previous one, because the audience is the data's owner and an auditor, not the public.
 
 ## Peer-to-peer append-only logs
 
@@ -87,5 +87,5 @@ The closest cousins are audit-chain on R2 and the transparency-log family. This 
 
 1. **Records are readable and appendable files,** YAML today, not JSON lines or binary tiles. Each data type's schema sets the record format.
 2. **Writers are thin.** They only validate, sign, and append. Queries come from derived outputs of any kind that can be rebuilt from the files, or from the files directly.
-3. **Signing is per record, and chaining is optional per data type.** The writer signs every record, and users can add their own signatures on top. Write coordination is still open, and sagas are the proposed direction for cross-account actions.
+3. **Signing is per entry, and each signature covers the one before.** The writer signs every entry, and users could add their own signatures on top (not built yet). Write coordination is still open, and sagas are the proposed direction for cross-account actions.
 4. **It runs on any object storage with free and open-source parts only.**

@@ -1,30 +1,14 @@
 # Saga approach: under consideration for write coordination, not a settled design.
-# Chain ledger/alice. Alice's side of transfer t_881. Alice's owner checks her balance first.
-# User fields are top-level. Yafi's own fields sit under yafi.
+# ledger/alice/t_881.yaml. Alice's side of transfer t_881, as one record with two entries.
+# Alice's owner checks her balance first. The signatures are placeholders, not real values.
+schema: ledger-entry@1
+yafi: header@1.0.0 2026-03-02T14:00:00Z eyJhbGciOiJFZDI1NTE5In0...Bk2mPd
 ---
 txn: t_881
 state: pending
 amount: -100
 counterparty: bob
-yafi:
-  schema: ledger-entry@1
-  seq: 41
-  written_at: "2026-03-02T14:00:00Z"
-  idem: req_t881_alice_pending
-  prev: "<base64url SHA-256 of seq 40>"
-  signatures:
-    # Placeholders, not real signatures. The protected header names kid worker-2026-a.
-    - protected: "<base64url protected header>"
-      signature: "<base64url signature>"
+yafi: checkpoint 2026-03-02T14:00:01Z eyJhbGciOiJFZDI1NTE5In0...Cq7sTe
 ---
-txn: t_881
 state: confirm          # written after Bob's side succeeded. On failure this would be "reverse".
-yafi:
-  schema: ledger-entry@1
-  seq: 42
-  written_at: "2026-03-02T14:00:01Z"
-  idem: req_t881_alice_confirm
-  prev: "<base64url SHA-256 of seq 41>"
-  signatures:
-    - protected: "<base64url protected header>"
-      signature: "<base64url signature>"
+yafi: patch 2026-03-02T14:00:02Z eyJhbGciOiJFZDI1NTE5In0...Dw3nUf

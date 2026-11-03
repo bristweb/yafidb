@@ -1,0 +1,135 @@
+# Architecture
+
+How a YafiDB deployment is organized: who may write where, what runs on a write, and what runs on a build. Start with the [README](../README.md). Record contents are in [record-format.md](record-format.md).
+
+## Terms
+
+| Term | Meaning |
+| --- | --- |
+| **Root** | Everything under one manifest: every folder, file, and worker of a deployment. |
+| **Manifest** | `/yafi.yaml` at the top of the root. The single source of truth for who may write where, which schema applies, and which pipeline steps run. |
+| **Worker** | The only writer for its folders. It may read anything in the root, so it can validate references and permissions, but it writes only inside its own folders. |
+| **Folder rule** | A line in the manifest that maps a folder to a schema. The nearest rule above a file applies, so subfolders inherit it. |
+| **Schema** | The definition of a record type. One schema may cover several folders. A folder has exactly one schema. |
+| **Write check** | A pipeline step that must pass before a write is signed. |
+| **Build step** | A pipeline step that makes output from verified files. Builds are optional. |
+| **Pipeline** | The steps for writes, builds, or quarantine, each with the steps it runs after. Steps with no dependency between them run in parallel. |
+| **Quarantine** | The default schema and worker that receive corrupt data. |
+
+```mermaid
+flowchart LR
+    M["/yafi.yaml<br/>manifest"] --> W1[Worker: crm<br/>/customer/]
+    M --> W2[Worker: shop<br/>/order/ and /invoice/]
+    M --> W3[Worker: quarantine<br/>/quarantine/]
+    M --> P[Pipelines<br/>write, build, quarantine]
+```
+
+## The manifest
+
+```yaml
+# /yafi.yaml
+workers:
+  crm:
+    folders:
+      /customer/: customer@1
+  shop:
+    folders:
+      /order/: order@1
+      /invoice/: invoice@1
+  quarantine:
+    folders:
+      /quarantine/: quarantine@1
+pipelines:
+  write:
+    - name: permissions
+      url: https://auth.example.com/check
+    - name: audit
+      command: [./audit-check]
+      after: [permissions]
+  build:
+    - name: relationship-cache
+      builtin: relationship-cache
+      out: /var/cache/yafi/cache.sqlite
+    - name: to-json
+      command: [./to-json]
+      out: /var/build/json
+    - name: to-csv
+      command: [./to-csv]
+      out: /var/build/csv
+    - name: site
+      command: [./static-site]
+      in: [/var/build/json, /var/build/csv]
+      out: /var/www
+      after: [to-json, to-csv]
+```
+
+The manifest is rejected, and no worker starts, if any of these hold:
+
+- Two workers list the same folder.
+- A folder of one worker sits inside a folder of another worker.
+- A folder has no schema, or names a schema that does not exist.
+- A pipeline step is duplicated, depends on an unknown step, or is part of a cycle.
+
+Folders may nest inside the same worker. The nearest rule wins, which lets one worker give a subfolder its own schema.
+
+The manifest may be signed with the admin key so that workers refuse a tampered copy. Signing is optional and changes nothing else.
+
+## Writes
+
+A write is a request to one worker. The worker accepts it only if the path is inside its own folders.
+
+```mermaid
+flowchart LR
+    R[Write request] --> A{Authority<br/>own folder,<br/>folder's schema}
+    A -->|no| X[No write]
+    A -->|yes| Y{Yafi's checks}
+    Y -->|fail| X
+    Y -->|pass| C{Write checks<br/>run per the pipeline}
+    C -->|any fails| X
+    C -->|all pass| S[Sign and conditional write]
+```
+
+- **Yafi's checks** always run first. They are listed in [record-format.md](record-format.md#enforced-checks).
+- **Write checks** are the admin's own steps, in any language. A step is a command or an HTTP endpoint. It receives the proposed entry and the existing file, never the database, and it answers pass or fail. Steps with no `after` run together, and a step runs only once everything it follows has passed. Any failure rejects the write.
+- Only Yafi signs and appends.
+
+Any path outside every worker folder, including the manifest itself, is refused. Changing the manifest is an admin action.
+
+## Builds
+
+A build is optional. A project can read its files directly, or run any mix of steps.
+
+```mermaid
+flowchart LR
+    P[Build path] --> D[Find workers<br/>under the path]
+    D --> V[Verify files<br/>with each folder's schema]
+    V --> J[to-json]
+    V --> C[to-csv]
+    V --> R[relationship-cache]
+    J --> S[Static site builder]
+    C --> S
+```
+
+1. Given a path, the build finds the folders under it from the manifest.
+2. It verifies every file there with its folder's schema. Corrupt data goes to quarantine first.
+3. It runs the build pipeline. Each step gets paths to read and a path to write, not the database. Outputs can live anywhere. Build steps never write into worker folders.
+
+Yafi ships a few default steps, such as the relationship cache that renames use and a static site. They are listed in the manifest like any other step, so an admin can remove or replace them.
+
+## Quarantine
+
+Quarantine is a schema, `quarantine@1`, owned by its own worker. Any part of the system that finds corrupt data sends it there: a worker, a build, or a reader.
+
+```mermaid
+flowchart LR
+    F[Corrupt data found] --> Q[Quarantine worker<br/>writes a quarantine record]
+    Q -->|write succeeded| T[Remove it from the original]
+    T --> N[Quarantine pipeline<br/>for example, an alert]
+```
+
+- A file that fails mid-way keeps its verified entries. Everything after the break moves to quarantine, and the original is cut back with a conditional write.
+- A file that never verified, or that holds a different schema than its folder, moves whole and is removed. This covers any file in a worker folder that did not come through its worker, such as a build writing into the wrong place.
+- The data is removed from the original only after the quarantine write succeeds, so it exists in exactly one place.
+- An admin can keep this behavior, replace it, or add steps to the `quarantine` pipeline, such as alerts. Those steps run after the move and cannot undo it.
+
+The record layout is in [record-format.md](record-format.md#broken-or-corrupted-files).

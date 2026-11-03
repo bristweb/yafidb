@@ -29,6 +29,7 @@ This log records each decision, the alternatives that were considered and reject
 | 21 | Reserved `yafi` field | User fields at the top level, `yafi` reserved, duplicate keys rejected | A `data:` wrapper, or an `id` field |
 | 22 | Signature format | JOSE (RFC 7515) with Ed25519 (`alg` `Ed25519`, RFC 9864) | Invented signature fields, plain SHA-256 |
 | 23 | Write coordination | Open, not configurable. Sagas proposed, owners under consideration | Central worker, 2PC |
+| 24 | Root, workers, and pipelines | One manifest grants folder authority and defines pipelines. Builds are optional | Builds required, shared write folders, per-hook configuration |
 
 ## 1. Storage backend: any object storage
 
@@ -236,6 +237,14 @@ The build can run in CI, or YafiDB can commit the generated site to a publish re
 **Rejected:** a central transfer worker (decision 6) and two-phase commit (decision 7).
 
 **Why:** the choice is not settled. Owners on celld would conflict with the no-servers goal (decision 18). Offering write coordination as a setting would present an open choice as settled.
+
+## 24. Root, workers, and pipelines
+
+**Chosen:** one manifest, `/yafi.yaml`, is the single source of truth for authority. It lists workers, the folders each owns, one schema per folder, and the pipelines. A worker writes only in its own folders and may read anywhere. No folder is shared between workers, and no worker folder nests inside another's. Write checks and build steps are steps in a pipeline: any language, with `after` dependencies, and independent steps run in parallel. Steps receive paths or a pass/fail question, never the database. A build is optional, and the shipped builds (relationship cache, static site) are ordinary steps that an admin can remove or replace. Corrupt data goes to a quarantine worker, and is removed from the original only after that write succeeds. Signing the manifest is optional.
+
+**Rejected:** a build that is required. Several workers sharing write authority over one folder. Several schemas in one folder. Passing the database to hooks. A fixed list of hook points. Builds writing into worker folders: anything there that did not come through its worker is corrupt and goes to quarantine.
+
+**Why:** one writer per folder keeps the signature chain and conditional write simple, and one manifest makes authority checkable in one place. A pipeline of independent steps covers permissions, format conversion, and publishing with one mechanism, and keeps the YAML the only source of truth.
 
 ## Open questions
 

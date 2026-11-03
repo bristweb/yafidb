@@ -18,8 +18,8 @@ export type CheckResult =
 
 /**
  * Checks one file. Pass `file` if it was just read, so the check sees exactly what the caller sees.
- * If another check cuts the file first (our conditional cut loses), the file is read again and checked afresh,
- * so the result always describes the file as it is now, never a version someone else already dealt with.
+ * If the file changed while it was being quarantined, nothing was changed: it is read again and checked afresh,
+ * so the result always describes the file as it is now.
  */
 export async function checkFile(ctx: WriterContext, path: string, file?: { body: string; version: string } | null): Promise<CheckResult> {
   const owner = ownerOf(ctx.manifest, path);

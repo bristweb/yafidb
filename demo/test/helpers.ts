@@ -64,7 +64,7 @@ export async function rejects<T>(p: Promise<T>) {
   throw new Error("expected the write to be rejected");
 }
 
-/** An in-memory R2 bucket binding: put honours onlyIf, delete takes no precondition. */
+/** An in-memory R2 bucket binding: put honours onlyIf. */
 export function fakeR2() {
   const kv = new Map<string, { body: string; etag: string }>();
   let n = 0;
@@ -78,13 +78,13 @@ export function fakeR2() {
       const etag = `e${++n}`; kv.set(k, { body: v, etag }); return { etag };
     },
     async delete(k: string) { kv.delete(k); },
-    async list() { return { objects: [...kv].map(([key, o]) => ({ key, size: o.body.length })), truncated: false }; },
+    async list() { return { objects: [...kv.keys()].map((key) => ({ key })), truncated: false }; },
   };
   return { kv, bucket };
 }
 
 /** Wraps a storage so the first `n` calls of `method` on `path` all wait until `n` of them have arrived. Forces an interleaving. */
-export function gated<S extends object>(storage: S, method: "get" | "putIfMatch" | "deleteIfMatch", path: string, n: number): S {
+export function gated<S extends object>(storage: S, method: "get" | "putIfMatch" | "delete", path: string, n: number): S {
   let arrived = 0;
   let open!: () => void;
   const door = new Promise<void>((r) => (open = r));

@@ -7,8 +7,8 @@ export type PutResult = { ok: true; version: string } | { ok: false };
 export interface Storage {
   get(path: string): Promise<{ body: string; version: string } | null>;
   putIfMatch(path: string, body: string, expected: string | null): Promise<PutResult>;
-  /** Removes a file only if it is still at `expected`. Used to finish a quarantine move. Where the store has no conditional delete, the file becomes an empty tombstone, which reads as absent. */
-  deleteIfMatch(path: string, expected: string): Promise<boolean>;
+  /** Removes a file. Plain, with no condition. Removing a file that is already gone is not an error. */
+  delete(path: string): Promise<void>;
   list(): Promise<string[]>;
 }
 
@@ -24,12 +24,7 @@ export interface S3Options {
   endpoint: string; bucket: string; region?: string;
   accessKeyId: string; secretAccessKey: string;
   fetch?: typeof fetch;
-  /** The store has no conditional delete (Cloudflare R2's S3 API): a delete is a conditional overwrite with an empty tombstone. */
-  tombstones?: boolean;
 }
-
-/** An empty object is a tombstone: it reads as absent, is never listed, and a create may replace it. */
-const isTombstone = (body: string) => body === "";
 
 const hex = (b: ArrayBuffer) => [...new Uint8Array(b)].map((x) => x.toString(16).padStart(2, "0")).join("");
 const sha = async (s: string) => hex(await crypto.subtle.digest("SHA-256", enc.encode(s)));
@@ -64,27 +59,14 @@ export class S3Storage implements Storage {
     return this.f(url, { method, headers, body });
   }
 
-  private async read(path: string) {
+  async get(path: string) {
     const r = await this.request("GET", path);
     if (r.status === 404) return null;
     if (!r.ok) throw new Error(`S3 GET ${r.status}`);
     return { body: dec.decode(await r.arrayBuffer()), version: r.headers.get("etag") ?? "" };
   }
 
-  async get(path: string) {
-    const o = await this.read(path);
-    return o && !(this.o.tombstones && isTombstone(o.body)) ? o : null;
-  }
-
   async putIfMatch(path: string, body: string, expected: string | null): Promise<PutResult> {
-    const r = await this.put(path, body, expected);
-    if (r.ok || expected !== null || !this.o.tombstones) return r;
-    // Creating over a tombstone: replace exactly that tombstone version.
-    const cur = await this.read(path);
-    return cur && isTombstone(cur.body) ? this.put(path, body, cur.version) : r;
-  }
-
-  private async put(path: string, body: string, expected: string | null): Promise<PutResult> {
     const cond = expected === null ? { "if-none-match": "*" } : { "if-match": expected };
     const r = await this.request("PUT", path, body, { "content-type": "application/yaml", ...cond });
     if (r.status === 412 || r.status === 409) return { ok: false as const };
@@ -92,12 +74,9 @@ export class S3Storage implements Storage {
     return { ok: true as const, version: r.headers.get("etag") ?? "" };
   }
 
-  async deleteIfMatch(path: string, expected: string) {
-    if (this.o.tombstones) return (await this.put(path, "", expected)).ok;
-    const r = await this.request("DELETE", path, undefined, { "if-match": expected });
-    if (r.status === 412 || r.status === 409 || r.status === 404) return false;
-    if (!r.ok) throw new Error(`S3 DELETE ${r.status}`);
-    return true;
+  async delete(path: string) {
+    const r = await this.request("DELETE", path);
+    if (!r.ok && r.status !== 404) throw new Error(`S3 DELETE ${r.status}`);
   }
 
   async list(): Promise<string[]> {
@@ -105,49 +84,35 @@ export class S3Storage implements Storage {
   }
 }
 
-// ---- Cloudflare R2 binding (Workers): conditional put with onlyIf; removal is a tombstone ----
+// ---- Cloudflare R2 binding (Workers): conditional put with onlyIf ----
 
 export interface R2BucketLike {
   get(key: string): Promise<{ text(): Promise<string>; etag: string } | null>;
   put(key: string, value: string, o?: { onlyIf?: { etagMatches?: string; etagDoesNotMatch?: string } }):
     Promise<{ etag: string } | null>;
   delete(key: string): Promise<void>;
-  list(o?: { cursor?: string }): Promise<{ objects: { key: string; size: number }[]; truncated: boolean; cursor?: string }>;
+  list(o?: { cursor?: string }): Promise<{ objects: { key: string }[]; truncated: boolean; cursor?: string }>;
 }
 
 export class R2Storage implements Storage {
   constructor(private bucket: R2BucketLike) {}
-  private async read(path: string) {
+  async get(path: string) {
     const o = await this.bucket.get(path.slice(1));
     return o ? { body: await o.text(), version: o.etag } : null;
   }
-  async get(path: string) {
-    const o = await this.read(path);
-    return o && !isTombstone(o.body) ? o : null;
-  }
-  private async put(path: string, body: string, expected: string | null): Promise<PutResult> {
+  async putIfMatch(path: string, body: string, expected: string | null): Promise<PutResult> {
     // A put with a failed precondition resolves to null. Creating uses etagDoesNotMatch "*".
     const onlyIf = expected === null ? { etagDoesNotMatch: "*" } : { etagMatches: expected };
     const r = await this.bucket.put(path.slice(1), body, { onlyIf });
     return r ? { ok: true, version: r.etag } : { ok: false };
   }
-  async putIfMatch(path: string, body: string, expected: string | null) {
-    const r = await this.put(path, body, expected);
-    if (r.ok || expected !== null) return r;
-    // Creating over a tombstone: replace exactly that tombstone version.
-    const cur = await this.read(path);
-    return cur && isTombstone(cur.body) ? this.put(path, body, cur.version) : r;
-  }
-  async deleteIfMatch(path: string, expected: string) {
-    // The R2 binding's delete() takes no precondition, so a removal is a conditional overwrite with an empty tombstone.
-    return (await this.put(path, "", expected)).ok;
-  }
+  async delete(path: string) { await this.bucket.delete(path.slice(1)); }
   async list() {
     const keys: string[] = [];
     let cursor: string | undefined;
     do {
       const r = await this.bucket.list({ cursor });
-      keys.push(...r.objects.filter((o) => o.size > 0).map((o) => "/" + o.key).filter((k) => k.endsWith(".yaml")));
+      keys.push(...r.objects.map((o) => "/" + o.key).filter((k) => k.endsWith(".yaml")));
       cursor = r.truncated ? r.cursor : undefined;
     } while (cursor);
     return keys.sort();

@@ -12,7 +12,7 @@ bun run check [path]    # the check tool: verify files, quarantine what is wrong
 bun run build [folder]  # read the files and run the manifest's build steps; validates nothing (default: /)
 bun run serve           # one writer per worker on :8787, POST only (set YAFI_TOKEN to require a bearer token)
 bun run sign-manifest   # optional: sign root/yafi.yaml with the admin key
-bun test                # 67 tests
+bun test                # 68 tests
 ```
 
 The root is `root/`. Its manifest, [`root/yafi.yaml`](root/yafi.yaml), lists three workers (`crm`, `shop`, `quarantine`), the folder each owns and its schema, the write checks, and the build steps. Open `dist/site/index.html` after a build.
@@ -37,12 +37,12 @@ To see quarantine: append `---\nstatus: refunded\nyafi: patch 2026-11-01T20:12:0
 | `src/manifest.ts` | parse and validate the manifest (overlap rules), folder rules, optional signing |
 | `src/pipeline.ts` | the step runner: `after` dependencies, parallel where independent |
 | `src/format.ts`, `jws.ts` | parse, verify, replay (checkpoint, patch, diff), dump block YAML; compact JWS, Ed25519 |
-| `src/check.ts`, `check-cli.ts`, `quarantine.ts` | the check tool and its quarantine: verify a file for its folder, send what is wrong to the quarantine worker, then cut it from the original, with races settled by conditional writes |
+| `src/check.ts`, `check-cli.ts`, `quarantine.ts` | the check tool and its quarantine: verify a file for its folder, log what is wrong with the quarantine worker, then overwrite (partial) or delete (whole) the original |
 | `src/checks.ts`, `writer.ts` | the enforced checks on a new entry, in order; create and append with authority, run the check tool first, sign, conditional write |
 | `src/build.ts`, `site.ts`, `sqlite.ts` | build: find workers under a path, read the files, run build steps; the two default steps |
 | `src/plugins.ts` | command and URL steps |
 | `src/handler.ts`, `server.ts`, `worker.ts` | HTTP handler (Web APIs), Bun server (one handler per worker), Cloudflare Worker entry |
-| `src/storage.ts`, `storage-local.ts` | storage interface: local (hash compare-and-swap), S3 (`If-Match`), R2 binding (`onlyIf`); removal is a conditional delete, or a conditional empty tombstone on R2 |
+| `src/storage.ts`, `storage-local.ts` | storage interface: local (hash compare-and-swap), S3 (`If-Match`), R2 binding (`onlyIf`) |
 
 ## Decisions and gaps
 
@@ -52,12 +52,12 @@ To see quarantine: append `---\nstatus: refunded\nyafi: patch 2026-11-01T20:12:0
 - **Manifest signing** is optional: `bun run sign-manifest` adds a last line `yafi: manifest <time> <jws>` over a hash of the text above it. A signature that fails always stops the worker, and `manifest.require_signature: true` also refuses an unsigned manifest. The committed manifest is unsigned, because the key is per machine.
 - **Pipelines:** steps are a `command` (JSON on stdin), a `url` (JSON POST), or, for builds, a `builtin` (`relationship-cache`, `static-site`). A step runs once everything in its `after` has succeeded. Write checks fail fast; a build step that fails skips what follows it and the others finish. Only built-in steps see the records, read as they are. Command and URL build steps get `{name, root, path, in, out}` (also as `YAFI_ROOT`, `YAFI_IN`, `YAFI_OUT`) and read the files themselves.
 - **Check and quarantine:** only the check tool quarantines. A file is wrong if its header version is not in `SUPPORTED_HEADERS` (exact text match), a signature or chain link fails, or its schema is not its folder's. A writer runs the check on a file before writing, quarantines what is wrong, and refuses that write, so a retry succeeds. A file outside every worker folder is not checked.
-- **Quarantine target:** the first folder whose schema is `quarantine@1`. The order is fixed: the quarantine worker writes the record, the original is cut or deleted with a conditional write on the version that was read, and then the caller gets 409 "retry". The record's path is `<flattened source>-<16 hex of SHA-256 of the removed text>.yaml`, so a second check of the same bytes finds it and adds none. The check that loses the conditional cut re-reads and proceeds with the file as it is. A crash between the steps is finished by the next check. The manifest's `quarantine` steps run after the move, and their failure cannot undo it.
+- **Quarantine target:** the first folder whose schema is `quarantine@1`. One rule for both cases: the quarantine worker logs the problem data first, and only if that succeeds is the original overwritten (partial, conditional write) or deleted (whole, plain delete), and then the caller gets 409 "retry". The record's path is `<flattened source>-<16 hex of SHA-256 of the logged text>.yaml`, so a repeat of the same bytes finds it and adds none. If the overwrite or delete fails, the next check logs again and retries; a file that changed meanwhile is logged as new content. The manifest's `quarantine` steps run after the move, and their failure cannot undo it.
 - **Builds read, they do not check:** `parseFile` reads a file with no signature, chain or version checks, and stops at the first part that does not parse. The default steps and the sample `export-json` use it. A file with no readable header is skipped without a report.
 - **Patch** is RFC 7386 merge patch (`null` deletes). **Diff** is a zero-context unified diff on a text field; text is line-based and ends with a newline.
 - **Entry check:** a checkpoint must pass the schema; a patch is checked with `required` removed; the applied result must always pass.
 - **References** are checked only in the new entry's data. Linking to a field of the current state without naming an entry (`#id//field`) is still open in the docs, so it is rejected.
-- **Compare-and-swap:** local storage uses a lock file plus the file's SHA-256, so it is safe across processes on one machine. S3 and R2 use ETags. R2 has no conditional delete, so removal there overwrites the file with an empty tombstone, conditional on the ETag. A tombstone reads as absent, is not listed, and a create over it is conditional on the tombstone's ETag (`S3Storage` has a `tombstones` option for R2's S3 endpoint). Of two simultaneous valid appends, one succeeds and the other gets 409 with nothing written; a success always means the entry is in the file. `test/races.test.ts` covers these. The S3 path is tested against a fake server, not a live bucket; the build tool reads local storage only.
+- **Compare-and-swap:** local storage uses a lock file plus the file's SHA-256, so it is safe across processes on one machine. S3 and R2 use ETags. Deletes are plain. Before a whole-file delete the check reads the file once more and starts over if it changed, which narrows the window but cannot close it. Of two simultaneous valid appends, one succeeds and the other gets 409 with nothing written; a success always means the entry is in the file. `test/races.test.ts` covers these. The S3 path is tested against a fake server, not a live bucket; the build tool reads local storage only.
 - **Write checks** fail closed: a crash, bad reply or 5 s timeout rejects the write. Workers cannot spawn commands, so `worker.ts` supports URL checks only. `worker.ts` is tested with a fake R2 bucket, not deployed with wrangler.
 - **Quarantine needs the signing key**, since the quarantine record is signed. Without one, the check tool finds the problem and moves nothing, and a check step fails.
 - **Only `.yaml` files** are listed, so a stray non-YAML file in a worker folder is not seen. A file outside every worker folder is reported as unowned by the check tool and left alone.

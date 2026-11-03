@@ -1,4 +1,4 @@
-// Races: concurrent quarantines, concurrent valid writes, and removal on stores with no conditional delete.
+// Races and failures: concurrent quarantines, concurrent valid writes, and a whole-file quarantine whose delete fails.
 import { describe, expect, test } from "bun:test";
 import { mkdir, readdir } from "node:fs/promises";
 import { join } from "node:path";
@@ -6,13 +6,13 @@ import { checkPath } from "../src/check.ts";
 import { verifyFile } from "../src/format.ts";
 import { asWorker } from "../src/node-context.ts";
 import { MANIFEST_PATH } from "../src/manifest.ts";
-import { R2Storage, S3Storage } from "../src/storage.ts";
+import { R2Storage } from "../src/storage.ts";
 import { appendEntry, createRecord } from "../src/writer.ts";
 import { fakeR2, gated, makeEnv, moved, order, readData, rejects, seedAlice, writeData } from "./helpers.ts";
 
 const ORDER = "/order/1042/2026.yaml";
 const FORGED = "---\nstatus: refunded\nyafi: patch 2026-11-01T20:12:09Z aaaa.bbbb.cccc\n";
-const quarantined = async (dir: string) => (await readdir(join(dir, "root/quarantine"))).filter((f) => f.endsWith(".yaml"));
+const quarantined = async (dir: string) => (await readdir(join(dir, "root/quarantine")).catch(() => [] as string[])).filter((f) => f.endsWith(".yaml"));
 
 async function orderWithForgedTail() {
   const env = await makeEnv();
@@ -50,24 +50,28 @@ describe("concurrent quarantine", () => {
     expect((await verifyFile(await readData(dir, ORDER), ctx.keys)).entries).toHaveLength(3);
   });
 
-  test("a whole-file quarantine race: the garbage moves once, the loser re-reads, finds nothing, and creates the record", async () => {
+  test("a whole-file quarantine race: the garbage is logged once, both are told to retry, and a retry creates the record", async () => {
     const { ctx, dir } = await makeEnv();
     const P = "/customer/alice.yaml";
     await mkdir(join(dir, "root/customer"), { recursive: true });
     await writeData(dir, P, "name: forged\n");
-    const racing = { ...ctx, storage: gated(gated(ctx.storage, "get", P, 2), "deleteIfMatch", P, 2) };
+    const racing = { ...ctx, storage: gated(ctx.storage, "delete", P, 2) };   // both have logged before either deletes
     const data = { name: "Alice", email: "alice@example.com" };
     const results = await Promise.allSettled([
       createRecord(racing, { path: P, schema: "customer@1", data }),
       createRecord(racing, { path: P, schema: "customer@1", data }),
     ]);
-    expect(results.filter((r) => r.status === "fulfilled")).toHaveLength(1);
-    const failed = results.find((r) => r.status === "rejected") as PromiseRejectedResult;
-    expect(failed.reason.status).toBe(409);
-    expect(await quarantined(dir)).toHaveLength(1);
-    expect((await verifyFile(await readData(dir, P), ctx.keys)).ok).toBe(true);   // the new record, not the garbage
+    for (const r of results) {
+      expect(r.status).toBe("rejected");
+      expect((r as PromiseRejectedResult).reason.status).toBe(409);
+      expect((r as PromiseRejectedResult).reason.message).toContain("retry");
+    }
+    expect(await quarantined(dir)).toHaveLength(1);        // the second log found the record and added none
+    expect(await ctx.storage.get(P)).toBeNull();
     const q = await verifyFile(await readData(dir, `/quarantine/${(await quarantined(dir))[0]}`), ctx.keys);
     expect(q.ok && q.state.removed).toBe("name: forged\n");
+    await createRecord(ctx, { path: P, schema: "customer@1", data });
+    expect((await verifyFile(await readData(dir, P), ctx.keys)).ok).toBe(true);
   });
 
   test("a crash between the quarantine write and the cut is finished by the next check, with no second record", async () => {
@@ -133,47 +137,64 @@ describe("concurrent valid writes", () => {
   });
 });
 
-describe("removal on a store with no conditional delete", () => {
-  test("R2: a conditional overwrite leaves an empty tombstone that reads as absent, is not listed, and can be created over once", async () => {
-    const { kv, bucket } = fakeR2();
-    const r2 = new R2Storage(bucket);
-    const a = await r2.putIfMatch("/x/a.yaml", "one", null);
-    expect(a.ok).toBe(true);
-    expect(await r2.deleteIfMatch("/x/a.yaml", "stale")).toBe(false);
-    expect(await r2.deleteIfMatch("/x/a.yaml", (a as any).version)).toBe(true);
-    expect(kv.get("x/a.yaml")!.body).toBe("");
-    expect(await r2.get("/x/a.yaml")).toBeNull();
-    expect(await r2.list()).toEqual([]);
-    // two creators race over the tombstone: exactly one wins
-    const [c1, c2] = await Promise.all([r2.putIfMatch("/x/a.yaml", "new1", null), r2.putIfMatch("/x/a.yaml", "new2", null)]);
-    expect([c1.ok, c2.ok].filter(Boolean)).toHaveLength(1);
-    expect((await r2.get("/x/a.yaml"))!.body).toBe(c1.ok ? "new1" : "new2");
-    // a live file still refuses a create
-    expect((await r2.putIfMatch("/x/a.yaml", "again", null)).ok).toBe(false);
+describe("whole-file quarantine", () => {
+  const P = "/customer/junk.yaml";
+  const junk = async (dir: string, body: string) => { await mkdir(join(dir, "root/customer"), { recursive: true }); await writeData(dir, P, body); };
+  const failing = (ctx: any, method: "delete" | "putIfMatch", match: (p: string) => boolean, on = { fail: true }) => ({
+    ...ctx, storage: new Proxy(ctx.storage, {
+      get(t: any, k) {
+        if (k === method) return async (p: string, ...a: any[]) => {
+          if (on.fail && match(p)) throw new Error("storage unavailable");
+          return t[method](p, ...a);
+        };
+        return typeof t[k] === "function" ? t[k].bind(t) : t[k];
+      } }) });
+
+  test("if the quarantine write fails, nothing is deleted", async () => {
+    const { ctx, dir } = await makeEnv();
+    await junk(dir, "name: forged\n");
+    const broken = failing(ctx, "putIfMatch", (p) => p.startsWith("/quarantine/"));
+    const [r] = await checkPath(broken, P);
+    expect(r.status).toBe("failed");
+    expect(await readData(dir, P)).toBe("name: forged\n");
+    expect(await quarantined(dir)).toHaveLength(0);
+    const err = await rejects(createRecord(broken, { path: P, schema: "customer@1", data: { name: "Alice", email: "a@example.com" } }));
+    expect(err.status).toBe(409);
   });
 
-  test("S3 API in tombstone mode never sends DELETE, and behaves like R2", async () => {
-    const objects = new Map<string, { body: string; etag: string }>();
-    const methods: string[] = [];
-    let n = 0;
-    const fake = (async (url: URL, init: RequestInit) => {
-      methods.push(init.method!);
-      const key = url.pathname, cur = objects.get(key), h = init.headers as Record<string, string>;
-      if (init.method === "GET") return cur ? new Response(cur.body, { headers: { etag: cur.etag } }) : new Response("", { status: 404 });
-      if ((h["if-none-match"] === "*" && cur) || (h["if-match"] && cur?.etag !== h["if-match"])) return new Response("", { status: 412 });
-      const etag = `"e${++n}"`; objects.set(key, { body: String(init.body ?? ""), etag });
-      return new Response("", { headers: { etag } });
-    }) as unknown as typeof fetch;
-    const s3 = new S3Storage({ endpoint: "http://s3", bucket: "b", accessKeyId: "AK", secretAccessKey: "SK", fetch: fake, tombstones: true });
-    const a = await s3.putIfMatch("/x/a.yaml", "one", null);
-    expect(await s3.deleteIfMatch("/x/a.yaml", (a as any).version)).toBe(true);
-    expect(await s3.get("/x/a.yaml")).toBeNull();
-    expect((await s3.putIfMatch("/x/a.yaml", "two", null)).ok).toBe(true);
-    expect((await s3.get("/x/a.yaml"))!.body).toBe("two");
-    expect(methods).not.toContain("DELETE");
+  test("if the delete fails, the write is refused; the next write logs again (a no-op for the same bytes) and deletes", async () => {
+    const { ctx, dir } = await makeEnv();
+    await junk(dir, "name: forged\n");
+    const broken = failing(ctx, "delete", (p) => p === P);
+    const err = await rejects(createRecord(broken, { path: P, schema: "customer@1", data: { name: "Alice", email: "a@example.com" } }));
+    expect(err.status).toBe(409);
+    expect(await readData(dir, P)).toBe("name: forged\n");   // still there
+    expect(await quarantined(dir)).toHaveLength(1);           // but already logged
+    const first = (await quarantined(dir))[0];
+
+    const done = moved(await checkPath(ctx, P));
+    expect(done[0].quarantinePath).toBe(`/quarantine/${first}`);
+    expect(await quarantined(dir)).toEqual([first]);          // same bytes, same record
+    expect(await ctx.storage.get(P)).toBeNull();
   });
 
-  test("the check tool quarantines a whole file on R2: the original becomes a tombstone and the folder checks clean", async () => {
+  test("if the file changes after a failed delete, the next check logs the new content too", async () => {
+    const { ctx, dir } = await makeEnv();
+    await junk(dir, "name: forged\n");
+    await checkPath(failing(ctx, "delete", (p) => p === P), P);
+    await writeData(dir, P, "name: forged\nextra: junk\n");
+    expect(moved(await checkPath(ctx, P))).toHaveLength(1);
+    const names = await quarantined(dir);
+    expect(names).toHaveLength(2);
+    const removed = await Promise.all(names.map(async (n) => {
+      const q = await verifyFile(await readData(dir, `/quarantine/${n}`), ctx.keys);
+      return q.ok && q.state.removed;
+    }));
+    expect(removed.sort()).toEqual(["name: forged\n", "name: forged\nextra: junk\n"]);
+    expect(await ctx.storage.get(P)).toBeNull();
+  });
+
+  test("on R2 the original is deleted after the record is written, and the folder checks clean", async () => {
     const { ctx } = await makeEnv({ plugins: [] });
     const { kv, bucket } = fakeR2();
     const r2 = { ...ctx, storage: new R2Storage(bucket) };
@@ -182,7 +203,7 @@ describe("removal on a store with no conditional delete", () => {
     kv.set("customer/junk.yaml", { body: "name: forged\n", etag: "j1" });
     const m = moved(await checkPath(r2));
     expect(m.map((x) => x.path)).toEqual(["/customer/junk.yaml"]);
-    expect(kv.get("customer/junk.yaml")!.body).toBe("");
+    expect(kv.has("customer/junk.yaml")).toBe(false);
     const q = await verifyFile((await r2.storage.get(m[0].quarantinePath))!.body, ctx.keys);
     expect(q.ok && q.state.removed).toBe("name: forged\n");
     expect((await checkPath(r2)).every((x) => x.status === "ok")).toBe(true);

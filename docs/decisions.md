@@ -31,8 +31,7 @@ This log records each decision, the alternatives that were considered and reject
 | 23 | Write coordination | Open, not configurable. Sagas proposed, owners under consideration | Central worker, 2PC |
 | 24 | Root, workers, and pipelines | One manifest grants folder authority and defines pipelines. Builds are optional | Builds required, shared write folders, per-hook configuration |
 | 25 | Format version and header | The version rides on the header mode (`header@1.0.0`), matched exactly against the check tool's list. The header holds only `schema` | A `yafi_schema` field, a separate `record_schema` field, version ranges |
-| 26 | The check tool | Validation and quarantine live in one standalone check tool. A worker always runs it before writing. Builds do no validation, and may opt in | Builds that validate or quarantine, a general reader role, skipping files with unknown versions |
-| 27 | Quarantine races | Write the quarantine record, then cut the original with a conditional write, then answer "retry". The record's name comes from a hash of the removed text. On R2, removal is a conditional empty tombstone | Locks, deleting before the record is written, a random record name |
+| 26 | The check tool | Validation and quarantine live in one standalone check tool. Problem data is logged to quarantine first, then the original is overwritten or deleted. A worker always runs it before writing. Builds do no validation, and may opt in | Builds that validate or quarantine, a general reader role, skipping files with unknown versions |
 
 ## 1. Storage backend: any object storage
 
@@ -176,7 +175,7 @@ Write coordination is not configurable. It is an open decision (see decision 23)
 
 **Defaults** are YAML for the record format, any object storage for storage, no derived output, and Ed25519 signing. **Templates** prefill the storage, record format, and derived output parts, for example `s3+yaml+none` and `s3+yaml+sqlite` (names illustrative). A user can start from a template or change any part. More options may be added later. This decision neither promises nor rules them out.
 
-**Plug-in interfaces** are defined at the interface level only. A record format provides a name and version, reads bytes into records, writes records into bytes, and can add records to a file. A storage backend lists files, reads a file with its version, and writes or removes a file only if it is still at that version (an empty tombstone stands in for removal where a store cannot delete conditionally, see decision 27). A build step names its engine and output, can rebuild from scratch, and never changes the files.
+**Plug-in interfaces** are defined at the interface level only. A record format provides a name and version, reads bytes into records, writes records into bytes, and can add records to a file. A storage backend lists files, reads a file with its version, writes a file only if it is still at that version, and deletes a file. A build step names its engine and output, can rebuild from scratch, and never changes the files.
 
 **Git** as a storage backend, beyond Git-only sites, is an open question (see decision 1). Git-only sites keep the records in Git, with no writer (see decision 17).
 
@@ -260,24 +259,11 @@ The build can run in CI, or YafiDB can commit the generated site to a publish re
 
 ## 26. The check tool
 
-**Chosen:** the enforced checks (version, signatures and chain, folder schema) and quarantine form one standalone tool, the check tool, which can run alone as a command. Anything that runs it automatically quarantines what is wrong, through the quarantine worker. A worker always runs it on a file before writing. A build does no validation or quarantine and only reads files and runs steps. An admin may add the check tool to a build as an ordinary opt-in step, and put the steps that need checked data `after` it. The shipped build steps read files as they are.
+**Chosen:** the enforced checks (version, signatures and chain, folder schema) and quarantine form one standalone tool, the check tool, which can run alone as a command. Anything that runs it automatically quarantines what is wrong, through the quarantine worker. The rule is the same for a file that is partly or wholly bad: the problem data is logged to quarantine first, and only after that succeeds is the original overwritten (partial) or deleted (whole). A worker always runs it on a file before writing. A build does no validation or quarantine and only reads files and runs steps. An admin may add the check tool to a build as an ordinary opt-in step, and put the steps that need checked data `after` it. The shipped build steps read files as they are.
 
 **Rejected:** a general reader role that validates or quarantines. Builds that verify or quarantine by default. A build-side report of problems. Skipping a file with an unknown version, which would leave an unusable file in a worker folder instead of recovering it.
 
 **Why:** records are often converted and published, so the only things that read the YAML may be a worker or a build. Putting all validation in one tool keeps one place to trust, and keeps builds simple. Whoever wants checked data asks the tool for it, and the same quarantine rules apply however it is run.
-
-## 27. Quarantine races are settled by conditional writes, with no locks
-
-**Chosen:** when a check finds corrupt data, the order is fixed: write the quarantine record, cut or remove the original with a conditional write on the version that was read, then answer "retry". The record's name comes from a hash of the removed text, so two checks of the same bytes make one record. The check that loses the conditional cut re-reads and carries on with the file as it is. A crash between the steps is finished by the next check. Where a store cannot delete conditionally, which includes Cloudflare R2, removal is a conditional overwrite with an empty tombstone that reads as absent and is not listed. Two valid appends to one file are settled by the same conditional write: one succeeds, the other gets a conflict with nothing written, and a success always means the entry is in the file.
-
-**Rejected:**
-
-- **Locks.** They need a service that holds them, and a crashed holder leaves the file stuck.
-- **Deleting first.** A crash after the delete and before the record loses the data.
-- **A random record name.** Two checks would make two records for the same bytes.
-- **An unconditional delete on R2.** R2's Workers `delete()` takes no condition, and its [S3 compatibility page](https://developers.cloudflare.com/r2/api/s3/api/) lists conditional headers only for HeadObject, GetObject, and PutObject. A conditional delete header was documented briefly in April 2026 and is not on the current page, so nothing relies on it. AWS S3 supports [conditional deletes](https://docs.aws.amazon.com/AmazonS3/latest/userguide/conditional-deletes.html), and the S3 storage uses them.
-
-**Why:** the record is written before anything is removed, so the data is never lost, and the conditional cut means a new write that landed in between is never cut. The details are in [record-format.md](record-format.md#concurrent-writes).
 
 ## Open questions
 

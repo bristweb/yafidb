@@ -63,7 +63,7 @@ This section describes what the record format, storage, and derived output must 
 - A way to list the files under a path.
 - A way to read a file, with its version (an ETag or a hash).
 - A way to write a file only if it is still at a given version, or only if it does not exist.
-- A way to remove a file only if it is still at a given version. A store with no conditional delete can overwrite the file with an empty tombstone instead, and a tombstone reads as absent.
+- A way to delete a file.
 - Optionally, a way to announce that a file changed, so a build can run.
 
 **Derived output must provide:**

@@ -1,10 +1,12 @@
 // Quarantine: moves corrupt data to the quarantine worker. It is part of the check tool (check.ts) and nothing else calls it.
-// Order: write the quarantine record, then cut the original with a conditional write on the version that was read,
-// then the caller answers "retry". No locks. The record's path comes from a hash of the removed text, so concurrent
-// or repeated quarantines of the same bytes meet at one record (the second finds it and moves on), and a crash between
-// the steps is finished by the next check. Whoever loses the conditional cut reports `lost` and re-reads.
-//   - a file that fails part-way keeps its verified entries; the tail moves, the file is cut back
-//   - a file with no verified header (including an unsupported version), or the wrong schema for its folder, moves whole and is deleted
+// One rule for both cases: the problem data is logged to quarantine first, and only once that succeeds is the original
+// changed. No locks. The record's path comes from a hash of the logged text, so repeating a quarantine of the same bytes
+// finds the record and adds none. If the change to the original fails or is cut short, the next check logs again
+// (a no-op for the same bytes, a new record if the file changed meanwhile) and retries it.
+//   - a file that fails part-way keeps its verified entries; the tail is logged, then the file is overwritten with the
+//     verified part (a conditional write on the version that was read)
+//   - a file with no verified header (including an unsupported version), or the wrong schema for its folder, is logged
+//     whole, then deleted (a plain delete)
 import type { WriterContext } from "./checks.ts";
 import type { VerifyResult } from "./format.ts";
 import { quarantineTarget } from "./manifest.ts";
@@ -15,7 +17,7 @@ import { createRecord } from "./writer.ts";
 
 export type QuarantineResult =
   | { quarantinePath: string; followUps: Record<string, string> }
-  | { lost: true }          // the conditional cut failed: the file changed or another check already cut it
+  | { lost: true }          // the file changed after it was read, so nothing was changed: read and check it again
   | { skipped: string };
 
 /** `keepPrefix`: the file has a verified prefix worth keeping. Otherwise the whole file is moved. */
@@ -30,8 +32,8 @@ export async function quarantineFile(
   const hash = (await sha256hex(removed)).slice(0, 16);
   const quarantinePath = `${target.folder}${path.slice(1, -".yaml".length).replace(/\//g, "_")}-${hash}.yaml`;
 
-  // Save the removed text first, as the quarantine worker, so a crash between the two steps never loses it.
-  // The record may already exist (a concurrent or earlier quarantine of the same bytes): that is as good as writing it.
+  // Log first, as the quarantine worker. If this fails, the original is left alone.
+  // The record may already exist (an earlier or concurrent quarantine of the same bytes): that is as good as writing it.
   try {
     await createRecord({ ...ctx, worker: target.worker }, {
       path: quarantinePath,
@@ -41,13 +43,15 @@ export async function quarantineFile(
     if (!(await ctx.storage.get(quarantinePath))) return { skipped: `quarantine write failed: ${e.message}` };
   }
 
-  let ok: boolean;
-  if (whole) ok = await ctx.storage.deleteIfMatch(path, file.version);
-  else {
+  if (whole) {
+    // A plain delete takes no condition, so look once more first: a file that changed since it was read is checked afresh.
+    if ((await ctx.storage.get(path))?.version !== file.version) return { lost: true };
+    try { await ctx.storage.delete(path); }
+    catch (e: any) { return { skipped: `logged to ${quarantinePath}, but the delete failed: ${e.message}` }; }
+  } else {
     const prefix = file.body.slice(0, v.validEnd);
-    ok = (await ctx.storage.putIfMatch(path, prefix.endsWith("\n") ? prefix : prefix + "\n", file.version)).ok;
+    if (!(await ctx.storage.putIfMatch(path, prefix.endsWith("\n") ? prefix : prefix + "\n", file.version)).ok) return { lost: true };
   }
-  if (!ok) return { lost: true };
 
   // Admin steps after the move (for example an alert). They cannot undo it; their results are reported.
   const steps = ctx.manifest.pipelines.quarantine;

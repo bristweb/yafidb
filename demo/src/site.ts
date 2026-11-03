@@ -1,4 +1,4 @@
-// Static site rendering: a root index, an index per type, and a page per record.
+// Static site rendering: a root index, an index per folder, and a page per record.
 import { posix } from "node:path";
 import type { BuiltRecord } from "./build.ts";
 import { REF_LIKE } from "./refs.ts";
@@ -45,7 +45,7 @@ export function renderSite(records: BuiltRecord[]): Map<string, string> {
     const back = (backlinks.get(r.path) ?? []).map((b) =>
       `<li><a href="${esc(rel(self, htmlPath(b.from)))}">${esc(b.from)}</a> <code>${esc(b.pointer)}</code></li>`).join("");
     files.set(self, page(r.path, `
-<p><a href="${esc(rel(self, `/${r.type}/index.html`))}">&larr; ${esc(r.type)}</a></p>
+<p><a href="${esc(rel(self, `${r.folder}index.html`))}">&larr; ${esc(r.folder)}</a></p>
 <h1>${esc(r.path)}</h1>
 <p class="id">record id ${esc(h.id)} &middot; ${esc(h.record_schema)} &middot; created ${esc(h.time)} &middot; <a href="${esc(posix.basename(r.path))}">raw file</a></p>
 ${r.warnings.map((w) => `<p class="warn">${esc(w)}</p>`).join("")}
@@ -56,13 +56,13 @@ ${r.v.entries.map((e) => `<tr id="e-${esc(e.id)}"><td>${e.seq}</td><td>${e.mode}
   }
 
   const types = new Map<string, BuiltRecord[]>();
-  for (const r of records) (types.get(r.type) ?? types.set(r.type, []).get(r.type)!).push(r);
+  for (const r of records) (types.get(r.folder) ?? types.set(r.folder, []).get(r.folder)!).push(r);
   for (const [t, list] of types) {
-    const idx = `/${t}/index.html`;
-    files.set(idx, page(t, `<p><a href="../index.html">&larr; all types</a></p><h1>${esc(t)}</h1><table><tr><th>record</th><th>entries</th><th>last entry</th></tr>
+    const idx = `${t}index.html`;
+    files.set(idx, page(t, `<p><a href="${esc(rel(idx, "/index.html"))}">&larr; all folders</a></p><h1>${esc(t)}</h1><table><tr><th>record</th><th>entries</th><th>last entry</th></tr>
 ${list.map((r) => `<tr><td><a href="${esc(rel(idx, htmlPath(r.path)))}">${esc(r.path)}</a></td><td>${r.v.entries.length}</td><td>${esc(r.v.entries.at(-1)?.time ?? "")}</td></tr>`).join("")}</table>`));
   }
   files.set("/index.html", page("YafiDB demo", `<h1>YafiDB demo</h1><ul>${[...types].map(([t, l]) =>
-    `<li><a href="${esc(t)}/index.html">${esc(t)}</a> (${l.length})</li>`).join("")}</ul>`));
+    `<li><a href="${esc(t.slice(1))}index.html">${esc(t)}</a> (${l.length})</li>`).join("")}</ul>`));
   return files;
 }

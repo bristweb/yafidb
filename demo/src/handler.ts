@@ -1,4 +1,4 @@
-// The writer's HTTP surface: two POST endpoints, no reads. Uses only Web standard APIs,
+// One worker's HTTP surface: two POST endpoints, no reads. Uses only Web standard APIs,
 // so the same handler runs under Bun.serve and as a Cloudflare Worker.
 import { WriteError, type WriterContext } from "./checks.ts";
 import { appendEntry, createRecord } from "./writer.ts";

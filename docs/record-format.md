@@ -83,7 +83,7 @@ If a signature or chain link fails to verify, the file is trusted up to the last
 2. Once that write succeeds, the original file is truncated to its last verified entry, with a conditional write so nothing new is lost.
 3. Writes resume from there. No admin is needed.
 
-A file with no verified header, or one whose `record_schema` differs from its folder's schema, moves whole and is removed.
+A file with no verified header, or one whose `record_schema` differs from its folder's schema, moves whole and is removed. Its `source` is the path alone, since it has no record id.
 
 ```yaml
 yafi_schema: yafi@1

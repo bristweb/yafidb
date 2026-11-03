@@ -5,6 +5,7 @@
   "scripts": {
     "keygen": "bun scripts/keygen.ts",
     "seed": "bun scripts/seed.ts",
+    "sign-manifest": "bun scripts/sign-manifest.ts",
     "serve": "bun src/server.ts",
     "build": "bun src/build-cli.ts",
     "test": "bun test"

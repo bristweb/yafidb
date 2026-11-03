@@ -1,0 +1,29 @@
+# The root manifest: who may write where, and what runs on writes and builds.
+workers:
+  crm:
+    folders:
+      /customer/: customer@1
+  shop:
+    folders:
+      /order/: order@1
+  quarantine:
+    folders:
+      /quarantine/: quarantine@1
+pipelines:
+  write:
+    - name: limit-qty
+      command:
+        - bun
+        - plugins/limit-qty.ts
+  build:
+    - name: relationship-cache
+      builtin: relationship-cache
+      out: dist/cache.sqlite
+    - name: static-site
+      builtin: static-site
+      out: dist/site
+    - name: export-json
+      command:
+        - bun
+        - plugins/export-json.ts
+      out: dist/json

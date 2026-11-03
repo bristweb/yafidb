@@ -8,9 +8,9 @@ required:
   - removed
 properties:
   source:
-    description: Link back to the record the text was removed from
+    description: Link back to the file the text was removed from. A file with no valid header has no record id, so only its path.
     type: string
-    pattern: "^/.+\\.yaml#[A-Za-z0-9_-]{22}$"
+    pattern: "^/.+\\.yaml(#[A-Za-z0-9_-]{22})?$"
   reason:
     type: string
   removed:

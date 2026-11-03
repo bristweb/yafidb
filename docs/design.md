@@ -365,6 +365,8 @@ Each write to a file produces an object-created notification (for example, [R2 e
 
 ### Compile
 
+Compile is the build pipeline described in [architecture.md](architecture.md#builds): optional steps from the manifest, so an admin can replace or remove any of them.
+
 Compile ingests **only the changed files**.
 
 - It **dedupes by file path and `yafi.seq`**, so a duplicated event does nothing.

@@ -71,17 +71,19 @@ customer: /customer/alice.yaml#kQ3x9fT2bL7pW8nZaB1c2d/Vt3nQcR8yP1wLm6sDf4gHa/ema
 - The path is chosen by the architect and stays clickable in ordinary file viewers.
 - The record id is authoritative; the path is a convenience.
 - An entry id is the first 22 characters of that entry's signature segment. Field paths follow JSON Pointer.
-- If a file is renamed, the compiled cache knows which files point to each record id, so only those files are rewritten. The cache is derived from the files and can be rebuilt at any time.
+- If a file is renamed, the relationship cache (a default build step) knows which files point to each record id, so only those files are rewritten. Without it, the owning worker finds them by scanning. The cache is derived from the files and can be rebuilt at any time.
 - Optionally, a renamed file leaves a stub at its old path pointing to the new one.
 - A link to an entry removed by a prune falls back to the record, with a "history pruned" warning.
 
 ## Broken or corrupted files
 
-If a signature or chain link fails to verify, the file is trusted up to the last entry that verifies. Yafi recovers it automatically:
+If a signature or chain link fails to verify, the file is trusted up to the last entry that verifies. Whatever finds the problem (a worker, a build, or a reader) recovers the file automatically through the quarantine worker (see [architecture.md](architecture.md#quarantine)):
 
 1. Everything after the break is moved, as-is, into a new quarantine record. The bad text is kept whole in a block field, and the record links back to the original by record id.
-2. The original file is truncated to its last verified entry, with a conditional write so nothing new is lost.
+2. Once that write succeeds, the original file is truncated to its last verified entry, with a conditional write so nothing new is lost.
 3. Writes resume from there. No admin is needed.
+
+A file with no verified header, or one whose `record_schema` differs from its folder's schema, moves whole and is removed.
 
 ```yaml
 yafi_schema: yafi@1
@@ -102,10 +104,11 @@ An admin can review the quarantine record later and, if anything was legitimate,
 
 Every write passes all enforced checks, or nothing is written. Yafi's own checks always run, in this order:
 
-1. **Existing file:** every signature and chain link already in the file verifies.
+0. **Authority:** the path is inside a folder the writing worker owns, and a new record uses that folder's schema. See [architecture.md](architecture.md#writes).
+1. **Existing file:** every signature and chain link already in the file verifies, and its `record_schema` is the folder's schema.
 2. **Entry:** the entry passes its record schema, uses a valid mode (`checkpoint`, `patch`, or `diff`), and the result of applying it still passes the schema.
 3. **Relationships:** every reference resolves, meaning the path exists and its record id matches the anchor, along with any entry id or field it names.
-4. **Plugged-in checks:** any checks the admin adds, such as permissions, in any language. A check only decides pass or fail.
+4. **Write checks:** the admin's own steps from the manifest's write pipeline, such as permissions, in any language. Steps run in parallel unless one names another in `after`. A step only decides pass or fail, and every step must pass.
 5. **Write:** Yafi signs over the previous signature and appends with a conditional write. If the file changed since it was read, such as a duplicate or conflicting write, nothing is written.
 
 Only Yafi signs and appends.

@@ -6,7 +6,7 @@ YafiDB keeps records in plain files—the source of truth—and turns them into 
 
 > **Status: design stage.** This repository contains the design, examples, and a small [working demo](demo/README.md). Names and interfaces are illustrative.
 
-**Explore:** [Design overview](docs/design.md) · [Examples](examples/) · [Configuration](docs/configuration.md) · [Working demo](demo/README.md)
+**Explore:** [Design overview](docs/design.md) · [Architecture](docs/architecture.md) · [Examples](examples/) · [Configuration](docs/configuration.md) · [Working demo](demo/README.md)
 
 ## An example record
 
@@ -64,10 +64,25 @@ flowchart LR
     C[Client]
     C -->|write| W[Writer<br/>minimal write API]
     W --> F[(Record files<br/>in object storage)]
-    F --> K[Compile<br/>optional]
+    F --> K[Build steps<br/>optional]
     K --> S[Derived output<br/>static site, scalable database,<br/>or other format]
     C -->|read| S
 ```
+
+## Architecture
+
+A deployment is a **root**: one manifest, `/yafi.yaml`, plus the folders it governs. The manifest gives each **worker** sole write authority over its own folders and maps every folder to one schema. Workers may read anywhere in the root, so they can check references and permissions. Writes and builds run as **pipelines** of steps in any language, and any step can be replaced.
+
+```mermaid
+flowchart LR
+    M["/yafi.yaml<br/>manifest"] --> W[Workers<br/>one writer per folder]
+    M --> P[Pipelines<br/>write checks, build steps]
+    W --> F[(Record files)]
+    F --> B[Build<br/>optional]
+    F -.corrupt data.-> Q[Quarantine worker]
+```
+
+Terms, the manifest format, and the build and quarantine flows are in [docs/architecture.md](docs/architecture.md).
 
 ## How writes are validated
 
@@ -130,6 +145,7 @@ New to YafiDB? Start with [docs/design.md](docs/design.md), then browse [example
 
 | File | What it answers |
 | --- | --- |
+| [docs/architecture.md](docs/architecture.md) | Root, manifest, workers, pipelines, builds, and quarantine |
 | [docs/design.md](docs/design.md) | How the whole system works, with worked examples |
 | [docs/record-format.md](docs/record-format.md) | What each part of a record means, and how writes are checked and signed |
 | [docs/configuration.md](docs/configuration.md) | How to set up each part, with templates and plug-in interfaces |

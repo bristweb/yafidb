@@ -20,7 +20,7 @@ export function createHandler(getCtx: () => Promise<WriterContext> | WriterConte
       try { body = JSON.parse(raw); } catch { throw new WriteError("request", "body must be JSON", 400); }
       const ctx = await getCtx();
       const out = pathname === "/records"
-        ? await createRecord(ctx, { path: body?.path, record_schema: body?.record_schema, data: body?.data })
+        ? await createRecord(ctx, { path: body?.path, schema: body?.schema, data: body?.data })
         : await appendEntry(ctx, { path: body?.path, mode: body?.mode, data: body?.data });
       return json(pathname === "/records" ? 201 : 200, out);
     } catch (e: any) {

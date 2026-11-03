@@ -5,12 +5,15 @@ import { canonical, isoSeconds, isPlainObject, sha256b64u } from "./util.ts";
 
 export type Mode = "checkpoint" | "patch" | "diff";
 export const MODES: Mode[] = ["checkpoint", "patch", "diff"];
-export const YAFI_SCHEMA = "yafi@1";
+// The header's mode carries the format version: `header@1.0.0`. A reader lists the versions it supports and
+// matches the whole text exactly; anything else is unusable. Any string is allowed as a version.
+export const SUPPORTED_HEADERS: readonly string[] = ["header@1.0.0"];
+export const CURRENT_HEADER = "header@1.0.0";
 const ID_LEN = 22;
 const NONCE_RE = /^[A-Za-z0-9_-]{22}$/;
-const LINE_RE = /^yafi: (header|checkpoint|patch|diff) (\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ) ([A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+)$/;
+const LINE_RE = /^yafi: (header@\S+|checkpoint|patch|diff) (\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ) ([A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+)$/;
 
-export interface HeaderInfo { yafi_schema: string; record_schema: string; time: string; nonce: string; sig: string; id: string }
+export interface HeaderInfo { version: string; schema: string; time: string; nonce: string; sig: string; id: string }
 export interface VEntry { seq: number; mode: Mode; time: string; sig: string; id: string; data: any; state: any }
 export interface VerifyResult {
   ok: boolean;
@@ -20,6 +23,7 @@ export interface VerifyResult {
   lastSig: string;             // signature the next entry must chain to
   validEnd: number;            // text offset where the trusted prefix ends
   error?: string;              // why verification stopped
+  unsupported?: string;        // the header version this reader does not support (the file is unusable, not corrupt)
 }
 
 export const recordId = (headerSig: string) => headerSig.slice(0, ID_LEN);
@@ -54,21 +58,22 @@ function parseDoc(body: string) {
   return { mode: m[1], time: m[2], jws: m[3], data };
 }
 
+class UnsupportedVersion extends Error {
+  constructor(public version: string) { super(`unsupported header version ${version}`); }
+}
+
 async function verifyHeader(body: string, keys: KeyStore): Promise<HeaderInfo> {
   const d = parseDoc(body);
-  if (d.mode !== "header") throw new Error("first line must be a header");
-  const k = Object.keys(d.data).sort().join(",");
-  if (k !== "record_schema,yafi_schema") throw new Error("header must hold exactly yafi_schema and record_schema");
-  if (typeof d.data.yafi_schema !== "string" || typeof d.data.record_schema !== "string") throw new Error("header fields must be text");
+  if (!d.mode.startsWith("header@")) throw new Error("first line must be a header");
+  if (!SUPPORTED_HEADERS.includes(d.mode)) throw new UnsupportedVersion(d.mode);
+  if (Object.keys(d.data).join(",") !== "schema" || typeof d.data.schema !== "string") throw new Error("header must hold exactly a `schema` text field");
   const v = await verifyJws(keys, d.jws);
   const p = v.payload;
-  if (p.mode !== "header") throw new Error("header signature has wrong mode");
+  if (p.mode !== d.mode) throw new Error("signed mode differs from line mode");
   if (typeof p.nonce !== "string" || !NONCE_RE.test(p.nonce)) throw new Error("header nonce missing or malformed");
-  if (p.yafi_schema !== d.data.yafi_schema || p.record_schema !== d.data.record_schema)
-    throw new Error("header fields differ from what was signed");
-  if (d.data.yafi_schema !== YAFI_SCHEMA) throw new Error(`unsupported yafi_schema ${d.data.yafi_schema}`);
+  if (p.schema !== d.data.schema) throw new Error("header schema differs from what was signed");
   if (!Number.isInteger(p.iat) || isoSeconds(p.iat) !== d.time) throw new Error("header time differs from signed iat");
-  return { yafi_schema: d.data.yafi_schema, record_schema: d.data.record_schema, time: d.time, nonce: p.nonce, sig: v.sig, id: recordId(v.sig) };
+  return { version: d.mode, schema: d.data.schema, time: d.time, nonce: p.nonce, sig: v.sig, id: recordId(v.sig) };
 }
 
 export const entryDataHash = (data: unknown) => sha256b64u(canonical(data));
@@ -95,7 +100,11 @@ export async function verifyFile(text: string, keys: KeyStore): Promise<VerifyRe
   const res: VerifyResult = { ok: false, header: null, entries: [], state: {}, lastSig: "", validEnd: 0 };
   const docs = splitDocs(text);
   try { res.header = await verifyHeader(docs[0].body, keys); }
-  catch (e: any) { res.error = `header: ${e.message}`; return res; }
+  catch (e: any) {
+    res.error = `header: ${e.message}`;
+    if (e instanceof UnsupportedVersion) res.unsupported = e.version;
+    return res;
+  }
   res.lastSig = res.header.sig;
   res.validEnd = docs[0].end;
   for (let i = 1; i < docs.length; i++) {

@@ -96,7 +96,7 @@ workers:
     const c = await createRecord(ctx, { path: "/data/a.yaml", data: { name: "A", email: "a@x.io" } });
     expect(c.record_id).toHaveLength(22);
     const text = await readData((await makeEnvDir(ctx)), "data/a.yaml");
-    expect(text).toContain("record_schema: customer@1");
+    expect(text).toContain("schema: customer@1");
   });
 
   test("a folder needs exactly one schema; unknown keys, bad folders and bad steps are all reported together", () => {
@@ -217,9 +217,9 @@ describe("worker authority", () => {
     expect((await rejects(createRecord(shop, { path: "/quarantine/x.yaml", data: { source: "/a.yaml", reason: "r", removed: "x" } }))).check).toBe("authority");
   });
 
-  test("the folder fixes the schema: a different record_schema is refused", async () => {
+  test("the folder fixes the schema: a different schema is refused", async () => {
     const { shop } = await two();
-    const e = await rejects(createRecord(shop, { path: "/order/1.yaml", record_schema: "customer@1", data: { name: "A", email: "a@x.io" } }));
+    const e = await rejects(createRecord(shop, { path: "/order/1.yaml", schema: "customer@1", data: { name: "A", email: "a@x.io" } }));
     expect(e.check).toBe("authority");
     expect(e.message).toContain("uses order@1, not customer@1");
   });
@@ -423,7 +423,7 @@ describe("build pipeline", () => {
     process.env.YAFI_JWKS_FILE = keysFile;
     try { expect((await build({ ctx })).steps["export-json"].status).toBe("ok"); } finally { process.env.YAFI_JWKS_FILE = prev; if (prev === undefined) delete process.env.YAFI_JWKS_FILE; }
     const j = JSON.parse(await readFile(join(dir, "json/customer/alice.json"), "utf8"));
-    expect(j).toMatchObject({ path: "/customer/alice.yaml", record_id: a.record_id, record_schema: "customer@1", state: { name: "Alice" } });
+    expect(j).toMatchObject({ path: "/customer/alice.yaml", record_id: a.record_id, schema: "customer@1", state: { name: "Alice" } });
     expect(await Bun.file(join(dir, "json/customer/forged.json")).exists()).toBe(false);
   });
 });
@@ -440,7 +440,7 @@ describe("quarantine as a worker", () => {
     expect(r.quarantined[0].path).toBe("/order/report.yaml");
     expect(await Bun.file(join(dir, "root/order/report.yaml")).exists()).toBe(false);   // removed from the original
     const q = await verifyFile(await readData(dir, r.quarantined[0].quarantinePath!.slice(1)), ctx.keys);
-    expect(q.ok && q.header!.record_schema).toBe("quarantine@1");
+    expect(q.ok && q.header!.schema).toBe("quarantine@1");
     expect(q.state.removed).toBe("totals:\n  orders: 1\n");
     // the quarantine record was written by the quarantine worker, so only that worker owns it
     expect(ownerOf(ctx.manifest, r.quarantined[0].quarantinePath!)!.worker).toBe("quarantine");
@@ -510,5 +510,64 @@ describe("quarantine as a worker", () => {
     expect(info.quarantine_path).toBe(r.quarantined[0].quarantinePath);
     expect(r.quarantined[0].followUps).toEqual({ alert: "ok", second: "failed: exit code 1" });
     expect(await readData(dir, "customer/alice.yaml")).not.toContain("garbage");               // the move stands
+  });
+});
+
+describe("header version", () => {
+  const withVersion = (text: string, v: string) => text.replace("yafi: header@1.0.0 ", `yafi: ${v} `);
+
+  test("the signed header holds the versioned mode, the time, a nonce and the schema, and nothing else", async () => {
+    const { ctx, dir } = await makeEnv();
+    await seedAlice(ctx);
+    const text = await readData(dir, "customer/alice.yaml");
+    expect(text).not.toContain("yafi_schema");
+    expect(text).not.toContain("record_schema");
+    const jws = text.split("\n")[1].split(" ")[3];
+    const payload = JSON.parse(Buffer.from(jws.split(".")[1], "base64url").toString());
+    expect(Object.keys(payload).sort()).toEqual(["iat", "mode", "nonce", "schema"]);
+    expect(payload).toMatchObject({ mode: "header@1.0.0", schema: "customer@1" });
+  });
+
+  test("only an exact match of a listed version is read; any other string is unusable", async () => {
+    const { ctx, dir } = await makeEnv();
+    await seedAlice(ctx);
+    const text = await readData(dir, "customer/alice.yaml");
+    expect((await verifyFile(text, ctx.keys)).ok).toBe(true);
+    for (const v of ["header@1.0.1", "header@1.0", "header@1", "header@1.0.0-beta", "header@stable", "header@1.0.0.0"]) {
+      const r = await verifyFile(withVersion(text, v), ctx.keys);
+      expect(r.ok).toBe(false);
+      expect(r.unsupported).toBe(v);
+    }
+    expect((await verifyFile(withVersion(text, "header"), ctx.keys)).ok).toBe(false);
+  });
+
+  test("a supported version still needs a signature that covers it", async () => {
+    // Listing a second version is a reader decision; the signed mode must equal the line's mode.
+    const { ctx, dir } = await makeEnv();
+    await seedAlice(ctx);
+    const fmt = await import("../src/format.ts");
+    const list = fmt.SUPPORTED_HEADERS as string[];
+    list.push("header@beta");
+    try {
+      const r = await verifyFile(withVersion(await readData(dir, "customer/alice.yaml"), "header@beta"), ctx.keys);
+      expect(r.ok).toBe(false);
+      expect(r.unsupported).toBeUndefined();
+      expect(r.error).toContain("signed mode differs");
+    } finally { list.pop(); }
+  });
+
+  test("an unsupported file is left alone by builds and refused by the writer, not quarantined", async () => {
+    const { ctx, dir } = await makeEnv();
+    await seedAlice(ctx);
+    const newer = withVersion(await readData(dir, "customer/alice.yaml"), "header@2.0.0");
+    await writeData(dir, "customer/alice.yaml", newer);
+    const r = await build({ ctx });
+    expect(r.unsupported).toEqual([{ path: "/customer/alice.yaml", version: "header@2.0.0" }]);
+    expect(r.quarantined).toHaveLength(0);
+    expect(r.records).toBe(0);
+    const e = await rejects(appendEntry(ctx, { path: "/customer/alice.yaml", mode: "patch", data: { name: "B" } }));
+    expect(e.check).toBe("existing");
+    expect(e.message).toContain("header@2.0.0");
+    expect(await readData(dir, "customer/alice.yaml")).toBe(newer);
   });
 });

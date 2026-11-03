@@ -30,6 +30,7 @@ This log records each decision, the alternatives that were considered and reject
 | 22 | Signature format | JOSE (RFC 7515) with Ed25519 (`alg` `Ed25519`, RFC 9864) | Invented signature fields, plain SHA-256 |
 | 23 | Write coordination | Open, not configurable. Sagas proposed, owners under consideration | Central worker, 2PC |
 | 24 | Root, workers, and pipelines | One manifest grants folder authority and defines pipelines. Builds are optional | Builds required, shared write folders, per-hook configuration |
+| 25 | Format version and header | The version rides on the header mode (`header@1.0.0`), matched exactly against the reader's list. The header holds only `schema` | A `yafi_schema` field, a separate `record_schema` field, version ranges |
 
 ## 1. Storage backend: any object storage
 
@@ -245,6 +246,14 @@ The build can run in CI, or YafiDB can commit the generated site to a publish re
 **Rejected:** a build that is required. Several workers sharing write authority over one folder. Several schemas in one folder. Passing the database to hooks. A fixed list of hook points. Builds writing into worker folders: anything there that did not come through its worker is corrupt and goes to quarantine.
 
 **Why:** one writer per folder keeps the signature chain and conditional write simple, and one manifest makes authority checkable in one place. A pipeline of independent steps covers permissions, format conversion, and publishing with one mechanism, and keeps the YAML the only source of truth.
+
+## 25. Format version rides on the header mode
+
+**Chosen:** the header line is `yafi: header@1.0.0 <time> <JWS>`, with the same shape as every entry. The header's one data field is `schema`, which replaces `record_schema`, and the `yafi_schema` field is dropped. The signed claims are the versioned mode, `iat`, `nonce`, and `schema`. A reader keeps a list of versions it supports and matches the full version text exactly. Any string is allowed (semver, beta, stable). A file with an unlisted version is unusable to that reader: builds skip and report it, writers refuse it, and it is not quarantined.
+
+**Rejected:** a separate version field, which gives the header an extra shape. Version ranges or ordering, which require every version to follow one scheme. Quarantining files with an unknown version, which would let an old reader move newer data it simply cannot read.
+
+**Why:** the signature already covers the mode, so the version is signed with no extra field. Exact matching keeps a reader's behaviour simple and predictable.
 
 ## Open questions
 

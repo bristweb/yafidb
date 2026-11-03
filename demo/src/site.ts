@@ -48,7 +48,6 @@ export function renderSite(records: BuiltRecord[]): Map<string, string> {
 <p><a href="${esc(rel(self, `${r.folder}index.html`))}">&larr; ${esc(r.folder)}</a></p>
 <h1>${esc(r.path)}</h1>
 <p class="id">record id ${esc(h.id)} &middot; ${esc(h.schema)} &middot; created ${esc(h.time)} &middot; <a href="${esc(posix.basename(r.path))}">raw file</a></p>
-${r.warnings.map((w) => `<p class="warn">${esc(w)}</p>`).join("")}
 <h2>Current state</h2>${value(r.v.state)}
 ${back ? `<h2>Referenced by</h2><ul>${back}</ul>` : ""}
 <h2>History</h2><table><tr><th>#</th><th>mode</th><th>time</th><th>entry id</th></tr>

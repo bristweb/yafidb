@@ -7,6 +7,7 @@
     "seed": "bun scripts/seed.ts",
     "sign-manifest": "bun scripts/sign-manifest.ts",
     "serve": "bun src/server.ts",
+    "check": "bun src/check-cli.ts",
     "build": "bun src/build-cli.ts",
     "test": "bun test"
   },

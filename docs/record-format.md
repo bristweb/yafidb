@@ -32,9 +32,9 @@ Writes and reads take separate paths. A write goes through a writer. A read skip
 
 ## How writes are validated
 
-A folder of files becomes a database when every write is checked against the same rules, by a writer or by the build.
+A folder of files becomes a database when every write is checked against the same rules, by a writer or, in Git-only sites, by the check tool in a test.
 
-- **You choose each schema, and Yafi enforces it.** Each data type has one schema, which you write. Yafi does not decide what the schema says. It makes sure every write follows the schema, and a file or client cannot use a different one. The writer sets `yafi.schema` on every record, so the name and version in a file always match the schema Yafi applied. Each schema version also pins the record format, so the signature covers the format too. In Git-only sites, the repository holds the schemas and the build enforces them.
+- **You choose each schema, and Yafi enforces it.** Each data type has one schema, which you write. Yafi does not decide what the schema says. It makes sure every write follows the schema, and a file or client cannot use a different one. The writer sets `yafi.schema` on every record, so the name and version in a file always match the schema Yafi applied. Each schema version also pins the record format, so the signature covers the format too. In Git-only sites, the repository holds the schemas and the check tool enforces them.
 - **Schemas are strict.** Every record must pass its schema before it is written. An invalid record is rejected, and nothing is written.
 - **Schemas define the rules.** A schema describes one kind of record. JSON Schema is the first schema language, and it defines the fields and their types. [CEL](https://cel.dev), a small and safe expression language, adds computed values and checks across fields. For example, a contribution schema can compute a `slices` value from the record's `type`, `amount`, `hours`, and `hourly_rate` fields. Other schema languages may be added later, and each must be just as strict. See [example schemas](examples/schemas/).
 - **Records are signed.** After validation, the writer signs the record, including everything in `yafi` except the signatures themselves. The signature is a standard JOSE signature (RFC 7515). Its header names the algorithm (`alg`) and the key (`kid`). The signed bytes are the record's canonical JSON (RFC 8785), with only `yafi.signatures` left out. A verifier finds the public key by `kid` in a JSON Web Key Set (RFC 7517), then confirms that the worker validated and wrote the record and that no one has changed it since. The worker uses `Ed25519`, the registered JOSE name (RFC 9864). A plain hash such as SHA-256 is not enough, because anyone who edits a file can recompute it. A shared-secret HMAC is not enough either, because any verifier holding the secret could create records. The signing key is kept separate from storage credentials, so someone who gets storage access cannot forge signed records. Records changed only through Git have no writer, so they are not signed.
@@ -47,7 +47,7 @@ See [how schemas are enforced in docs/design.md](docs/design.md#schemas) for the
 
 The version rides on the header's mode: `header@1.0.0`. The signed claims hold that full mode, so the signature covers the version.
 
-A reader holds a list of the versions it supports, as PDF and SQLite readers do. It matches the version as whole text, exactly. Any string is a valid version (`1.0.0`, `2.1.0-beta`, `stable`), and Yafi never compares or orders them. `header@1.0` does not match `header@1.0.0`. A file whose version is not on the list is unusable to that reader: a build skips it and reports it, and a writer refuses to append to it. It is not quarantined, because a newer file is not a corrupt one. Support for a new format version means adding it to the list, and a file never changes version, so a new version starts a new file.
+The check tool holds a list of the versions it supports, as PDF and SQLite readers do. It matches the version as whole text, exactly. Any string is a valid version (`1.0.0`, `2.1.0-beta`, `stable`), and Yafi never compares or orders them. `header@1.0` does not match `header@1.0.0`. A file whose version is not on the list is corrupt as far as the tool is concerned, like any other file it cannot verify. It is quarantined whole, and a worker refuses the write until it retries. Builds and plain reads do not look at versions. Support for a new format version means adding it to the list, and a file never changes version, so a new version starts a new file.
 
 ## Record ids
 
@@ -83,7 +83,7 @@ customer: /customer/alice.yaml#kQ3x9fT2bL7pW8nZaB1c2d/Vt3nQcR8yP1wLm6sDf4gHa/ema
 
 ## Broken or corrupted files
 
-If a signature or chain link fails to verify, the file is trusted up to the last entry that verifies. Whatever finds the problem (a worker, a build, or a reader) recovers the file automatically through the quarantine worker (see [architecture.md](architecture.md#quarantine)):
+If a signature or chain link fails to verify, the file is trusted up to the last entry that verifies. The check tool finds the problem and recovers the file automatically through the quarantine worker (see [architecture.md](architecture.md#the-check-tool)). A worker runs it before every write, and a build can opt in to running it.
 
 1. Everything after the break is moved, as-is, into a new quarantine record. The bad text is kept whole in a block field, and the record links back to the original by record id.
 2. Once that write succeeds, the original file is truncated to its last verified entry, with a conditional write so nothing new is lost.

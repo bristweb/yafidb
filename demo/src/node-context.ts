@@ -30,7 +30,7 @@ export const asWorker = <T extends WriterContext>(ctx: T, worker: string): T => 
 
 /**
  * `worker` is who the context writes as; leave it out for read-only users such as the build tool.
- * `needSigner: false` allows running without a key (reads, and builds that cannot heal).
+ * `needSigner: false` allows running without a key (reads and builds).
  */
 export async function loadContext(project: string, o: { worker?: string; needSigner?: boolean; now?: () => Date } = {}): Promise<WriterContext & { config: Config; hasSigner: boolean; rootDir: string }> {
   const cfg = await loadConfig(project);

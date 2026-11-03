@@ -23,7 +23,6 @@ export interface VerifyResult {
   lastSig: string;             // signature the next entry must chain to
   validEnd: number;            // text offset where the trusted prefix ends
   error?: string;              // why verification stopped
-  unsupported?: string;        // the header version this reader does not support (the file is unusable, not corrupt)
 }
 
 export const recordId = (headerSig: string) => headerSig.slice(0, ID_LEN);
@@ -58,15 +57,12 @@ function parseDoc(body: string) {
   return { mode: m[1], time: m[2], jws: m[3], data };
 }
 
-class UnsupportedVersion extends Error {
-  constructor(public version: string) { super(`unsupported header version ${version}`); }
-}
-
-async function verifyHeader(body: string, keys: KeyStore): Promise<HeaderInfo> {
+async function verifyHeader(body: string, keys: KeyStore | null): Promise<HeaderInfo> {
   const d = parseDoc(body);
   if (!d.mode.startsWith("header@")) throw new Error("first line must be a header");
-  if (!SUPPORTED_HEADERS.includes(d.mode)) throw new UnsupportedVersion(d.mode);
   if (Object.keys(d.data).join(",") !== "schema" || typeof d.data.schema !== "string") throw new Error("header must hold exactly a `schema` text field");
+  if (!keys) { const sig = d.jws.split(".")[2]; return { version: d.mode, schema: d.data.schema, time: d.time, nonce: "", sig, id: recordId(sig) }; }   // plain read
+  if (!SUPPORTED_HEADERS.includes(d.mode)) throw new Error(`unsupported header version ${d.mode}`);
   const v = await verifyJws(keys, d.jws);
   const p = v.payload;
   if (p.mode !== d.mode) throw new Error("signed mode differs from line mode");
@@ -78,11 +74,12 @@ async function verifyHeader(body: string, keys: KeyStore): Promise<HeaderInfo> {
 
 export const entryDataHash = (data: unknown) => sha256b64u(canonical(data));
 
-async function verifyEntry(body: string, prev: string, first: boolean, keys: KeyStore) {
+async function verifyEntry(body: string, prev: string, first: boolean, keys: KeyStore | null) {
   const d = parseDoc(body);
   if (!MODES.includes(d.mode as Mode)) throw new Error(`invalid mode ${d.mode}`);
   if ("yafi" in d.data) throw new Error("`yafi` is a reserved field");
   if (first && d.mode !== "checkpoint") throw new Error("first entry must be a checkpoint");
+  if (!keys) { const sig = d.jws.split(".")[2]; return { mode: d.mode as Mode, time: d.time, sig, id: recordId(sig), data: d.data }; }   // plain read
   const v = await verifyJws(keys, d.jws);
   const p = v.payload;
   if (p.mode !== d.mode) throw new Error("signed mode differs from line mode");
@@ -93,18 +90,14 @@ async function verifyEntry(body: string, prev: string, first: boolean, keys: Key
 }
 
 /**
- * Verifies a whole file. Never throws: on a failure the result holds everything
+ * Verifies a whole file; with `keys: null` it only reads it (see `parseFile`). Never throws: on a failure the result holds
  * up to the last good entry (`entries`, `state`, `validEnd`) plus `error`.
  */
-export async function verifyFile(text: string, keys: KeyStore): Promise<VerifyResult> {
+export async function verifyFile(text: string, keys: KeyStore | null): Promise<VerifyResult> {
   const res: VerifyResult = { ok: false, header: null, entries: [], state: {}, lastSig: "", validEnd: 0 };
   const docs = splitDocs(text);
   try { res.header = await verifyHeader(docs[0].body, keys); }
-  catch (e: any) {
-    res.error = `header: ${e.message}`;
-    if (e instanceof UnsupportedVersion) res.unsupported = e.version;
-    return res;
-  }
+  catch (e: any) { res.error = `header: ${e.message}`; return res; }
   res.lastSig = res.header.sig;
   res.validEnd = docs[0].end;
   for (let i = 1; i < docs.length; i++) {
@@ -122,6 +115,12 @@ export async function verifyFile(text: string, keys: KeyStore): Promise<VerifyRe
   res.ok = true;
   return res;
 }
+
+/**
+ * Reads a file without checking anything: no signatures, chain, hashes or versions. Whatever parses and replays is
+ * returned, up to the first entry that does not. For builds and other consumers; only a worker validates.
+ */
+export const parseFile = (text: string) => verifyFile(text, null);
 
 // ---- replaying entries --------------------------------------------------
 

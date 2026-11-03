@@ -1,7 +1,7 @@
 // The writer: runs the enforced checks, signs, and appends with a conditional write.
 import { enforcedChecks, WriteError, type EntryRequest, type WriterContext } from "./checks.ts";
 import { dumpData, entryDataHash, MODES, verifyFile, CURRENT_HEADER, type Mode } from "./format.ts";
-import { healFile } from "./heal.ts";
+import { checkFile } from "./check.ts";
 import { signJws } from "./jws.ts";
 import { ownerOf } from "./manifest.ts";
 import { assertPath } from "./storage.ts";
@@ -50,11 +50,22 @@ async function commit(ctx: WriterContext, path: string, base: string, expected: 
   return { path, record_id: after.header!.id, entry_id: after.entries.at(-1)!.id, version: put.version };
 }
 
+/** The worker always runs the check on a file before writing to it. Anything wrong is quarantined, the write is refused, and a retry works. */
+async function refuseIfWrong(ctx: WriterContext, path: string, f: { body: string; version: string }) {
+  const c = await checkFile(ctx, path, f);
+  if (c.status === "quarantined" || c.status === "failed")
+    throw new WriteError("existing", `existing file does not verify: ${c.reason}${c.status === "quarantined" ? `; moved to ${c.quarantinePath}, retry` : ` (${c.skipped})`}`, 409);
+}
+
 export async function createRecord(ctx: WriterContext, req: { path: string; schema?: string; data: any }): Promise<WriteResult> {
   const { schema } = authorize(ctx, req.path);
   if (req.schema !== undefined && req.schema !== schema)
     throw new WriteError("authority", `${req.path} uses ${schema}, not ${req.schema}`, 403);
-  if (await ctx.storage.get(req.path)) throw new WriteError("write", `${req.path} already exists`, 409);
+  const existing = await ctx.storage.get(req.path);
+  if (existing) {
+    await refuseIfWrong(ctx, req.path, existing);
+    throw new WriteError("write", `${req.path} already exists`, 409);
+  }
   return commit(ctx, req.path, await headerText(ctx, schema), null, { mode: "checkpoint", data: req.data }, schema);
 }
 
@@ -63,13 +74,6 @@ export async function appendEntry(ctx: WriterContext, req: { path: string; mode:
   if (!MODES.includes(req.mode)) throw new WriteError("request", `mode must be one of ${MODES.join(", ")}`, 400);
   const f = await ctx.storage.get(req.path);
   if (!f) throw new WriteError("request", `${req.path} does not exist`, 404);
-  // Corrupt data found while writing is quarantined; this write is refused and can be retried.
-  const v = await verifyFile(f.body, ctx.keys);
-  if (v.unsupported) throw new WriteError("existing", `existing file uses ${v.unsupported}, which this writer does not support`, 409);
-  if (!v.ok || v.header?.schema !== schema) {
-    const why = v.ok ? `existing file uses ${v.header!.schema}, but its folder uses ${schema}` : v.error!;
-    const h = await healFile(ctx, req.path, f, v, why, !v.ok && !!v.header);
-    throw new WriteError("existing", `existing file does not verify: ${why}${"quarantinePath" in h ? `; moved to ${h.quarantinePath}, retry` : ` (${h.skipped})`}`, 409);
-  }
+  await refuseIfWrong(ctx, req.path, f);
   return commit(ctx, req.path, f.body, f.version, { mode: req.mode, data: req.data }, schema);
 }

@@ -12,9 +12,10 @@ How a YafiDB deployment is organized: who may write where, what runs on a write,
 | **Folder rule** | A line in the manifest that maps a folder to a schema. The nearest rule above a file applies, so subfolders inherit it. |
 | **Schema** | The definition of a record type. One schema may cover several folders. A folder has exactly one schema. |
 | **Write check** | A pipeline step that must pass before a write is signed. |
-| **Build step** | A pipeline step that makes output from verified files. Builds are optional. |
+| **Check tool** | A standalone tool that verifies a file as its folder requires and quarantines what is wrong. A worker always runs it before writing. A build may run it as an opt-in step. Nothing else validates. |
+| **Build step** | A pipeline step that makes output from files. A build reads and validates nothing. Builds are optional. |
 | **Pipeline** | The steps for writes, builds, or quarantine, each with the steps it runs after. Steps with no dependency between them run in parallel. |
-| **Quarantine** | The default schema and worker that receive corrupt data. |
+| **Quarantine** | The default schema and worker that receive corrupt data. Only the check tool sends data there. |
 
 ```mermaid
 flowchart LR
@@ -89,49 +90,87 @@ flowchart LR
     C -->|all pass| S[Sign and conditional write]
 ```
 
-- **Yafi's checks** always run first. They are listed in [record-format.md](record-format.md#enforced-checks).
+- **The check tool** runs on the file first. See [The check tool](#the-check-tool).
+- **Yafi's checks** run next. They are listed in [record-format.md](record-format.md#enforced-checks).
 - **Write checks** are the admin's own steps, in any language. A step is a command or an HTTP endpoint. It receives the proposed entry and the existing file, never the database, and it answers pass or fail. Steps with no `after` run together, and a step runs only once everything it follows has passed. Any failure rejects the write.
 - Only Yafi signs and appends.
 
 Any path outside every worker folder, including the manifest itself, is refused. Changing the manifest is an admin action.
 
+## The check tool
+
+The check tool is separate from the worker and from builds, and can run alone (`bun run check [path]`). For each file it confirms that:
+
+- the header's version is one the tool supports,
+- every signature and chain link verifies, and
+- the header's schema is the schema of the file's folder.
+
+Files outside every worker folder are not checked. Whatever fails is quarantined by the tool (see [Quarantine](#quarantine)), and anything that runs the tool automatically gets the same result.
+
+- **A worker** always runs it on a file before writing to it. If the file is wrong, it is quarantined, the write is refused, and a retry works.
+- **Reads** do not run it. Records are often converted to other formats and published, so a reader may be nothing more than a browser.
+- **A build** does not run it by default. An admin can add it as a step, and the later steps `after` it then see only checked files.
+
+```mermaid
+flowchart LR
+    W[Worker<br/>before every write] --> C{Check tool}
+    B[Build step<br/>opt-in] --> C
+    A[Admin, by hand] --> C
+    C -->|fine| OK[Continue]
+    C -->|wrong| Q[Quarantine worker]
+```
+
 ## Builds
 
-A build is optional. A project can read its files directly, or run any mix of steps.
+A build is optional. A project can read its files directly, or run any mix of steps. A build only reads files and runs steps. It does no validation and no quarantine.
 
 ```mermaid
 flowchart LR
     P[Build path] --> D[Find workers<br/>under the path]
-    D --> V[Verify files<br/>with each folder's schema]
-    V --> J[to-json]
-    V --> C[to-csv]
-    V --> R[relationship-cache]
+    D --> K[check<br/>opt-in]
+    D --> J[to-json]
+    K -.after.-> C[to-csv]
+    D --> R[relationship-cache]
     J --> S[Static site builder]
     C --> S
 ```
 
 1. Given a path, the build finds the folders under it from the manifest.
-2. It verifies every file there with its folder's schema. Corrupt data goes to quarantine first.
-3. It runs the build pipeline. Each step gets paths to read and a path to write, not the database. Outputs can live anywhere. Build steps never write into worker folders.
+2. It runs the build pipeline. Each step gets paths to read and a path to write, not the database. Outputs can live anywhere. Build steps never write into worker folders.
 
-Yafi ships a few default steps, such as the relationship cache that renames use and a static site. They are listed in the manifest like any other step, so an admin can remove or replace them.
+To build from checked data only, add the check tool as a step and put `after: [check]` on the steps that need it:
+
+```yaml
+pipelines:
+  build:
+    - name: check
+      command:
+        - bun
+        - src/check-cli.ts
+        - /order/
+    - name: static-site
+      after:
+        - check
+      builtin: static-site
+      out: dist/site
+```
+
+Yafi ships a few default steps, such as the relationship cache that renames use and a static site. They are listed in the manifest like any other step, so an admin can remove or replace them. They read files as they are, without checking them.
 
 ## Quarantine
 
-Quarantine is a schema, `quarantine@1`, owned by its own worker. Any part of the system that finds corrupt data sends it there: a worker, a build, or a reader.
+Quarantine is a schema, `quarantine@1`, owned by its own worker. Only the check tool sends data there, and it is the only thing with quarantine tools.
 
 ```mermaid
 flowchart LR
-    F[Corrupt data found] --> Q[Quarantine worker<br/>writes a quarantine record]
+    F[Check finds<br/>corrupt data] --> Q[Quarantine worker<br/>writes a quarantine record]
     Q -->|write succeeded| T[Remove it from the original]
     T --> N[Quarantine pipeline<br/>for example, an alert]
 ```
 
 - A file that fails mid-way keeps its verified entries. Everything after the break moves to quarantine, and the original is cut back with a conditional write.
-- A file that never verified, or that holds a different schema than its folder, moves whole and is removed. This covers any file in a worker folder that did not come through its worker, such as a build writing into the wrong place.
+- A file with no verified header, or that holds a different schema than its folder, moves whole and is removed. A header version the tool does not support counts here, like any other corruption. So does any file in a worker folder that did not come through its worker.
 - The data is removed from the original only after the quarantine write succeeds, so it exists in exactly one place.
 - An admin can keep this behavior, replace it, or add steps to the `quarantine` pipeline, such as alerts. Those steps run after the move and cannot undo it.
 
-A file whose header version the reader does not list is unusable, but it is not corrupt, so it is skipped and reported rather than quarantined. See [format versions](record-format.md#format-versions).
-
-The record layout is in [record-format.md](record-format.md#broken-or-corrupted-files).
+The record layout is in [record-format.md](record-format.md#broken-or-corrupted-files). Versions are in [record-format.md](record-format.md#format-versions).

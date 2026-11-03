@@ -46,14 +46,7 @@ export class LocalStorage implements Storage {
     });
   }
 
-  async deleteIfMatch(path: string, expected: string) {
-    const f = this.file(path);
-    return this.locked(f, async () => {
-      if ((await this.get(path))?.version !== expected) return false;
-      await rm(f);
-      return true;
-    });
-  }
+  async delete(path: string) { await rm(this.file(path), { force: true }); }
 
   async list() {
     const out: string[] = [];

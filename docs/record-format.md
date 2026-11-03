@@ -73,13 +73,13 @@ customer: /customer/alice.yaml#kQ3x9fT2bL7pW8nZaB1c2d/Vt3nQcR8yP1wLm6sDf4gHa/ema
 
 If a signature or chain link fails to verify, the file is trusted up to the last entry that verifies. The check tool finds the problem and recovers the file automatically through the quarantine worker (see [architecture.md](architecture.md#the-check-tool)). A worker runs it before every write, and a build can opt in to running it.
 
-1. Everything after the break is moved, as-is, into a new quarantine record. The bad text is kept whole in a block field, and the record links back to the original by record id.
-2. Once that write succeeds, the original file is truncated to its last verified entry, with a conditional write so nothing new is lost.
+One rule covers both cases: the problem data is logged to quarantine first, and only after that succeeds is the original changed.
+
+1. The bad part is written, as-is, into a quarantine record. The bad text is kept whole in a block field. For a partly bad file, it is everything after the break, and the record links back to the original by record id. A file with no verified header, or one whose `schema` differs from its folder's schema, is bad whole, and its `source` is the path alone, since it has no record id.
+2. Once that write succeeds, a partly bad file is overwritten with its verified part, with a conditional write so nothing new is lost. A wholly bad file is deleted.
 3. The write that triggered the check is refused with a retry. Writes resume from there. No admin is needed.
 
-How this stays safe when several checks or writes meet is under [Concurrent writes](#concurrent-writes).
-
-A file with no verified header, or one whose `schema` differs from its folder's schema, moves whole and is removed. Its `source` is the path alone, since it has no record id.
+If the quarantine write fails, the original is not touched. If the overwrite or delete fails, the next check logs the file again and retries it. Same bytes find the same record, because its name comes from a hash of the logged text (`/quarantine/<source path>-<first 16 hex of the SHA-256>.yaml`), so nothing is logged twice. A file that changed in between is logged as new content.
 
 ```yaml
 schema: quarantine@1
@@ -112,11 +112,8 @@ Only Yafi signs and appends. A success always means the entry is in the file. A 
 
 ## Concurrent writes
 
-No locks. Every change to a file is a conditional write on the version that was read, and each case below ends in one of two ways: the change is in the file, or it was refused and the file is as it was.
+No locks. Every entry is written with a conditional write on the version that was read, so a write either lands or is refused with the file as it was.
 
 - **Two valid appends:** both read the same version, and the store lets one write through. The other gets a conflict (409, or 412 from the store), and nothing of it is written. It re-reads and retries, and its entry chains to the winner's.
-- **Two checks find the same corrupt file:** the order is fixed. First the quarantine record is written. Then the original is cut or removed with a conditional write on the version that was read. Then the caller answers "retry".
-  - The quarantine record's path comes from a hash of the removed text (`/quarantine/<source path>-<first 16 hex of the SHA-256>.yaml`). A second check of the same bytes finds the record already there and adds none.
-  - Whoever loses the conditional cut re-reads the file, checks it again, and carries on with the file as it is now: gone, cut back, or changed by a new write.
-  - A crash between the steps is finished by the next check. It finds the same corrupt text, finds the record already written, and makes the cut.
-- **Removal where the store cannot delete conditionally:** local storage and S3 delete conditionally. Cloudflare R2 does not: its Workers `delete()` takes no condition, and its [S3 compatibility page](https://developers.cloudflare.com/r2/api/s3/api/) lists conditional headers only for HeadObject, GetObject, and PutObject. There the removal is a conditional overwrite with an empty tombstone, on the version that was read. A tombstone reads as absent, is not listed, and a create replaces it with a conditional write on the tombstone's version.
+- **Two checks find the same corrupt file:** both log the same bytes to the same record, so there is one record. A partly bad file is overwritten by whichever conditional write lands first, and the other re-reads and checks again. A wholly bad file is deleted by either, and a delete of a file already gone is not an error. The caller of a check that changed the file gets "retry".
+- **A file that changes before the delete:** a plain delete takes no condition, so the check reads the file once more first and starts again if it no longer matches. A change landing between that read and the delete is not covered.

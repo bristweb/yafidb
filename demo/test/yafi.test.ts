@@ -337,10 +337,7 @@ describe("storage backends and formats", () => {
       const key = new URL(req.url).pathname;
       expect(req.headers.get("authorization")).toStartWith("AWS4-HMAC-SHA256 Credential=AK/");
       const cur = objects.get(key);
-      if (req.method === "DELETE") {
-        if (!cur || req.headers.get("if-match") !== cur.etag) return new Response("", { status: 412 });
-        objects.delete(key); return new Response("", { status: 204 });
-      }
+      if (req.method === "DELETE") { objects.delete(key); return new Response("", { status: 204 }); }
       if (req.method === "GET") return cur ? new Response(cur.body, { headers: { etag: cur.etag } }) : new Response("", { status: 404 });
       const ifNone = req.headers.get("if-none-match"), ifMatch = req.headers.get("if-match");
       if ((ifNone === "*" && cur) || (ifMatch && cur?.etag !== ifMatch) || (ifMatch && !cur)) return new Response("", { status: 412 });
@@ -356,9 +353,8 @@ describe("storage backends and formats", () => {
     expect(got.body).toBe("one");
     expect((await s3.putIfMatch("/x/a.yaml", "two", '"stale"')).ok).toBe(false);
     expect((await s3.putIfMatch("/x/a.yaml", "two", got.version)).ok).toBe(true);
-    expect(await s3.deleteIfMatch("/x/a.yaml", got.version)).toBe(false); // stale version
-    const cur = (await s3.get("/x/a.yaml"))!;
-    expect(await s3.deleteIfMatch("/x/a.yaml", cur.version)).toBe(true);
+    await s3.delete("/x/a.yaml");
+    await s3.delete("/x/a.yaml");   // already gone: not an error
     expect(await s3.get("/x/a.yaml")).toBeNull();
     await s3.putIfMatch("/x/a.yaml", "two", null);
     expect(await s3.get("/x/none.yaml")).toBeNull();
@@ -378,7 +374,7 @@ describe("storage backends and formats", () => {
         const etag = `e${++n}`; kv.set(k, { body: v, etag }); return { etag };
       },
       async delete(k: string) { kv.delete(k); },
-      async list() { return { objects: [...kv].map(([key, o]) => ({ key, size: o.body.length })), truncated: false }; },
+      async list() { return { objects: [...kv.keys()].map((key) => ({ key })), truncated: false }; },
     };
     const { privateJwk, publicJwk } = await generateKeyPair("w");
     const schema = (await import("yaml")).default.parse(await readFile(join(root, "schemas/customer@1.schema.yaml"), "utf8"));

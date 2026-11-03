@@ -117,7 +117,7 @@ flowchart LR
     B[Build step<br/>opt-in] --> C
     A[Admin, by hand] --> C
     C -->|fine| OK[Continue]
-    C -->|wrong| Q[Quarantine worker]
+    C -->|wrong| Q[(Quarantine)]
 ```
 
 ## Builds
@@ -163,7 +163,7 @@ Quarantine is a schema, `quarantine@1`, owned by its own worker. Only the check 
 
 ```mermaid
 flowchart LR
-    F[Check finds<br/>corrupt data] --> Q[Quarantine worker<br/>writes a quarantine record]
+    F[Check finds<br/>corrupt data] --> Q[Write check<br/>writes a quarantine record]
     Q -->|record written| T[Overwrite or delete<br/>the original]
     T --> R[Answer retry]
     T --> N[Quarantine pipeline<br/>for example, an alert]

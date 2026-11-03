@@ -71,7 +71,7 @@ customer: /customer/alice.yaml#kQ3x9fT2bL7pW8nZaB1c2d/Vt3nQcR8yP1wLm6sDf4gHa/ema
 
 ## Broken or corrupted files
 
-If a signature or chain link fails to verify, the file is trusted up to the last entry that verifies. The check tool finds the problem and recovers the file automatically through the quarantine worker (see [architecture.md](architecture.md#the-check-tool)). A worker runs it before every write, and a build can opt in to running it.
+If a signature or chain link fails to verify, the file is trusted up to the last entry that verifies. The check tool finds the problem and recovers the file automatically by writing it to quarantine (see [architecture.md](architecture.md#the-check-tool)). A worker runs it before every write, and a build can opt in to running it.
 
 One rule covers both cases: the problem data is logged to quarantine first, and only after that succeeds is the original changed.
 

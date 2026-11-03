@@ -1,15 +1,14 @@
-// `bun run build`: verify, quarantine, and write dist/ (and the SQLite cache when configured).
-import { resolve } from "node:path";
+// `bun run build [folder]`: verify, heal through the quarantine worker, then run the manifest's build pipeline.
 import { build } from "./build.ts";
 import { loadContext } from "./node-context.ts";
 
-const root = new URL("..", import.meta.url).pathname;
-const ctx = await loadContext(root, { needSigner: false });
-const cfg = ctx.config.build ?? { out: "dist" };
-const sqliteFlag = process.argv.includes("--no-sqlite") ? null : cfg.sqlite;
-const r = await build({ ctx, out: resolve(root, cfg.out), sqlite: sqliteFlag ? resolve(root, sqliteFlag) : null });
+const project = new URL("..", import.meta.url).pathname;
+const ctx = await loadContext(project, { needSigner: false });
+const r = await build({ ctx, path: process.argv[2] ?? "/" });
 
-console.log(`built ${r.records} records -> ${cfg.out}/${sqliteFlag ? ` and ${sqliteFlag}` : ""}`);
-for (const q of r.quarantined) console.log(`QUARANTINE ${q.path}: ${q.reason}${q.quarantinePath ? ` -> moved tail to ${q.quarantinePath}` : ` (${q.skipped})`}`);
-for (const u of r.unusable) console.log(`UNUSABLE ${u.path}: ${u.reason}`);
+console.log(`build ${r.path}: ${r.records} records, workers: ${r.workers.map((w) => `${w.worker}${w.folder}`).join(" ") || "none"}`);
+for (const [n, s] of Object.entries(r.steps)) console.log(`step ${n}: ${s.status}${s.error ? ` (${s.error})` : ""}`);
+for (const q of r.quarantined) console.log(`QUARANTINE ${q.path}: ${q.reason}${q.quarantinePath ? ` -> ${q.quarantinePath}` : ` (${q.skipped})`}`);
+for (const u of r.unowned) console.log(`UNOWNED ${u}: not inside any worker folder, left alone`);
 for (const b of r.brokenRefs) console.log(`BROKEN REF ${b.path} ${b.pointer}: ${b.error}`);
+if (Object.values(r.steps).some((s) => s.status === "failed")) process.exit(1);

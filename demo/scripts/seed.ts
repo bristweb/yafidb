@@ -3,7 +3,8 @@
 import { rm } from "node:fs/promises";
 import { resolve } from "node:path";
 import { makeDiff } from "../src/format.ts";
-import { loadContext } from "../src/node-context.ts";
+import { asWorker, loadContext } from "../src/node-context.ts";
+import { listRecords } from "../src/manifest.ts";
 import { appendEntry, createRecord } from "../src/writer.ts";
 
 const root = new URL("..", import.meta.url).pathname;
@@ -12,14 +13,17 @@ const times = [
   "2026-10-29T15:02:10Z", "2026-10-29T15:02:11Z",                       // order: header, checkpoint
   "2026-10-30T13:10:44Z", "2026-10-31T01:05:19Z", "2026-11-01T19:40:02Z",
 ];
-const ctx = await loadContext(root, { now: () => new Date(times.shift()!) });
-if ((await ctx.storage.list()).length && !process.argv.includes("--force")) {
-  console.log("data/ already has records; pass --force to start over");
+const base = await loadContext(root, { now: () => new Date(times.shift()!) });
+if ((await listRecords(base.storage)).length && !process.argv.includes("--force")) {
+  console.log("root/ already has records; pass --force to start over");
   process.exit(0);
 }
-await rm(resolve(root, ctx.config.storage.dir), { recursive: true, force: true });
+// Clear every worker folder, but keep the manifest.
+for (const w of Object.values(base.manifest.workers)) for (const f of Object.keys(w.folders))
+  await rm(resolve(base.rootDir, "." + f), { recursive: true, force: true });
+const crm = asWorker(base, "crm"), shop = asWorker(base, "shop");
 
-const alice = await createRecord(ctx, { path: "/customer/alice.yaml", record_schema: "customer@1",
+const alice = await createRecord(crm, { path: "/customer/alice.yaml",
   data: { name: "Alice Example", email: "alice@example.com" } });
 
 const note = `Gift message: "Happy 60th, Mom!" Love, José & Ana 🎉
@@ -30,12 +34,12 @@ const customer = `/customer/alice.yaml#${alice.record_id}`;
 const items = [{ sku: "MUG-01", qty: 2, price: 12.5 }];
 const path = "/order/1042/2026.yaml";
 
-await createRecord(ctx, { path, record_schema: "order@1",
+await createRecord(shop, { path,
   data: { status: "placed", customer, items, note, carrierLog: "" } });
-await appendEntry(ctx, { path, mode: "patch", data: { status: "shipped", tracking: "1Z999AA10123456784" } });
+await appendEntry(shop, { path, mode: "patch", data: { status: "shipped", tracking: "1Z999AA10123456784" } });
 const log = "2026-10-30 09:14 Picked up, Knoxville TN\n2026-10-30 21:02 Departed facility, Nashville TN\n";
-await appendEntry(ctx, { path, mode: "diff", data: { carrierLog: makeDiff("", log) } });
-await appendEntry(ctx, { path, mode: "checkpoint", data: {
+await appendEntry(shop, { path, mode: "diff", data: { carrierLog: makeDiff("", log) } });
+await appendEntry(shop, { path, mode: "checkpoint", data: {
   status: "delivered", customer, items, note, tracking: "1Z999AA10123456784",
   carrierLog: log + "2026-11-01 14:37 Delivered, side door\n" } });
 

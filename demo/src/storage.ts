@@ -7,6 +7,8 @@ export type PutResult = { ok: true; version: string } | { ok: false };
 export interface Storage {
   get(path: string): Promise<{ body: string; version: string } | null>;
   putIfMatch(path: string, body: string, expected: string | null): Promise<PutResult>;
+  /** Removes a file only if it is still at `expected`. Used to finish a quarantine move. */
+  deleteIfMatch(path: string, expected: string): Promise<boolean>;
   list(): Promise<string[]>;
 }
 
@@ -72,6 +74,13 @@ export class S3Storage implements Storage {
     return { ok: true as const, version: r.headers.get("etag") ?? "" };
   }
 
+  async deleteIfMatch(path: string, expected: string) {
+    const r = await this.request("DELETE", path, undefined, { "if-match": expected });
+    if (r.status === 412 || r.status === 409 || r.status === 404) return false;
+    if (!r.ok) throw new Error(`S3 DELETE ${r.status}`);
+    return true;
+  }
+
   async list(): Promise<string[]> {
     throw new Error("S3Storage.list is not implemented in the demo; the build tool reads local storage");
   }
@@ -83,6 +92,7 @@ export interface R2BucketLike {
   get(key: string): Promise<{ text(): Promise<string>; etag: string } | null>;
   put(key: string, value: string, o?: { onlyIf?: { etagMatches?: string; etagDoesNotMatch?: string } }):
     Promise<{ etag: string } | null>;
+  delete(key: string): Promise<void>;
   list(o?: { cursor?: string }): Promise<{ objects: { key: string }[]; truncated: boolean; cursor?: string }>;
 }
 
@@ -97,6 +107,13 @@ export class R2Storage implements Storage {
     const onlyIf = expected === null ? { etagDoesNotMatch: "*" } : { etagMatches: expected };
     const r = await this.bucket.put(path.slice(1), body, { onlyIf });
     return r ? { ok: true as const, version: r.etag } : { ok: false as const };
+  }
+  async deleteIfMatch(path: string, expected: string) {
+    // R2 has no conditional delete, so this check-then-delete can race with a concurrent write.
+    const o = await this.bucket.get(path.slice(1));
+    if (!o || o.etag !== expected) return false;
+    await this.bucket.delete(path.slice(1));
+    return true;
   }
   async list() {
     const keys: string[] = [];

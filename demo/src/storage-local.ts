@@ -19,8 +19,7 @@ export class LocalStorage implements Storage {
     }
   }
 
-  async putIfMatch(path: string, body: string, expected: string | null) {
-    const f = this.file(path);
+  private async locked<T>(f: string, fn: () => Promise<T>): Promise<T> {
     await mkdir(dirname(f), { recursive: true });
     const lock = f + ".lock";
     let fh;
@@ -31,17 +30,29 @@ export class LocalStorage implements Storage {
         await new Promise((r) => setTimeout(r, 10));
       }
     }
-    try {
+    try { return await fn(); }
+    finally { await fh.close(); await rm(lock, { force: true }); }
+  }
+
+  async putIfMatch(path: string, body: string, expected: string | null) {
+    const f = this.file(path);
+    return this.locked(f, async () => {
       const cur = await this.get(path);
       if ((cur?.version ?? null) !== expected) return { ok: false as const };
       const tmp = f + ".tmp";
       await writeFile(tmp, body);
       await rename(tmp, f);
       return { ok: true as const, version: await sha256hex(body) };
-    } finally {
-      await fh.close();
-      await rm(lock, { force: true });
-    }
+    });
+  }
+
+  async deleteIfMatch(path: string, expected: string) {
+    const f = this.file(path);
+    return this.locked(f, async () => {
+      if ((await this.get(path))?.version !== expected) return false;
+      await rm(f);
+      return true;
+    });
   }
 
   async list() {

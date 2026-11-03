@@ -1,7 +1,7 @@
-// Quarantine: corrupt data found by anyone (a worker, a build, a reader) goes to the quarantine worker.
-// Only after that write succeeds is the data removed from the original, so it lives in one place.
+// Quarantine: moves corrupt data to the quarantine worker. It is part of the check tool (check.ts) and nothing else calls it.
+// Only after the quarantine write succeeds is the data removed from the original, so it lives in one place.
 //   - a file that fails part-way keeps its verified entries; the tail moves, the file is cut back
-//   - a file with no verified header, or the wrong schema for its folder, moves whole and is deleted
+//   - a file with no verified header (including an unsupported version), or the wrong schema for its folder, moves whole and is deleted
 import type { WriterContext } from "./checks.ts";
 import type { VerifyResult } from "./format.ts";
 import { quarantineTarget } from "./manifest.ts";
@@ -9,14 +9,14 @@ import { runPipeline } from "./pipeline.ts";
 import { callUrl, runCommand } from "./plugins.ts";
 import { createRecord } from "./writer.ts";
 
-export type HealResult =
+export type QuarantineResult =
   | { quarantinePath: string; followUps: Record<string, string> }
   | { skipped: string };
 
 /** `keepPrefix`: the file has a verified prefix worth keeping. Otherwise the whole file is moved. */
-export async function healFile(
+export async function quarantineFile(
   ctx: WriterContext, path: string, file: { body: string; version: string }, v: VerifyResult, reason: string, keepPrefix = !!v.header,
-): Promise<HealResult> {
+): Promise<QuarantineResult> {
   const target = quarantineTarget(ctx.manifest);
   if (!target) return { skipped: "the manifest has no quarantine worker" };
   if (!ctx.signer) return { skipped: "no signing key; nothing moved" };

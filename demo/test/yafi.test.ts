@@ -1,3 +1,4 @@
+import { checkPath } from "../src/check.ts";
 import { describe, expect, test } from "bun:test";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
@@ -9,7 +10,7 @@ import { build } from "../src/build.ts";
 import { generateKeyPair, importJwks, importSigner } from "../src/jws.ts";
 import { commandCheck } from "../src/plugins.ts";
 import { appendEntry, createRecord } from "../src/writer.ts";
-import { makeEnv, order, readData, rejects, root, seedAlice, withBuild, writeData } from "./helpers.ts";
+import { makeEnv, moved, order, readData, rejects, root, seedAlice, withBuild, writeData } from "./helpers.ts";
 
 const ORDER = "/order/1042/2026.yaml";
 
@@ -75,7 +76,6 @@ describe("happy path", () => {
     ]);
     const r = await build({ ctx });
     expect(r.records).toBe(2);
-    expect(r.brokenRefs).toEqual([]);
     expect(r.steps).toEqual({ "relationship-cache": { status: "ok" }, "static-site": { status: "ok" } });
     const page = await readFile(join(out, "order/1042/2026.html"), "utf8");
     expect(page).toContain('href="../../customer/alice.html"');
@@ -230,11 +230,16 @@ describe("quarantine", () => {
     const forged = "---\nstatus: refunded\nyafi: patch 2026-11-01T20:12:09Z aaaa.bbbb.cccc\n";
     await writeData(dir, ORDER, goodText + forged);
 
+    // a build only reads: it does not notice the forged tail, and moves nothing
     const out = join(dir, "dist");
     withBuild(ctx, [{ name: "static-site", builtin: "static-site", out }]);
-    const r = await build({ ctx });
-    expect(r.quarantined).toHaveLength(1);
-    const q = r.quarantined[0].quarantinePath!;
+    await build({ ctx });
+    expect(await readData(dir, ORDER)).toBe(goodText + forged);
+
+    // the check tool finds it and quarantines it
+    const results = await checkPath(ctx);
+    expect(moved(results)).toHaveLength(1);
+    const q = moved(results)[0].quarantinePath;
     expect(q).toStartWith("/quarantine/");
 
     // the original is cut back to its last verified entry
@@ -249,15 +254,16 @@ describe("quarantine", () => {
     expect(qv.state.removed).toBe(forged);
     expect(qv.state.source).toBe(`${ORDER}#${v.header!.id}`);
     expect(qv.state.reason).toContain("entry 3");
+    await build({ ctx });
     expect(await readFile(join(out, "quarantine", q.split("/")[2].replace(".yaml", ".html")), "utf8")).toContain("refunded");
 
     // writes resume
     await appendEntry(ctx, { path: ORDER, mode: "patch", data: { status: "delivered" } });
-    // and a second build has nothing left to heal
-    expect((await build({ ctx })).quarantined).toEqual([]);
+    // and a second check has nothing left to move
+    expect((await checkPath(ctx)).every((r) => r.status === "ok")).toBe(true);
   });
 
-  test("without a signing key the build trusts the prefix, ignores the tail, and moves nothing", async () => {
+  test("a build reads what it can and checks nothing; the check tool without a signing key moves nothing", async () => {
     const { ctx, dir } = await makeEnv();
     const alice = await seedAlice(ctx);
     await createRecord(ctx, { path: ORDER, schema: "order@1", data: order(alice.ref) });
@@ -266,9 +272,12 @@ describe("quarantine", () => {
     const out = join(dir, "dist");
     withBuild(ctx, [{ name: "static-site", builtin: "static-site", out }]);
     const r = await build({ ctx: { ...ctx, signer: null as any } });
-    expect(r.quarantined[0].skipped).toContain("no signing key");
+    expect(r.records).toBe(2);
+    expect(Object.keys(r)).not.toContain("quarantined");
+    expect(await readFile(join(out, "order/1042/2026.html"), "utf8")).toContain("MUG-01");   // read as far as it parses
+    const c = await checkPath({ ...ctx, signer: null as any }, ORDER);
+    expect(c[0]).toMatchObject({ status: "failed", skipped: expect.stringContaining("no signing key") });
     expect(await readData(dir, ORDER)).toBe(text);
-    expect(await readFile(join(out, "order/1042/2026.html"), "utf8")).toContain("Trusted up to entry 1");
   });
 
   test("a file whose header fails moves whole to quarantine and is removed", async () => {
@@ -276,11 +285,11 @@ describe("quarantine", () => {
     await seedAlice(ctx);
     const t = (await readData(dir, "customer/alice.yaml")).replace("schema: customer@1", "schema: order@1");
     await writeData(dir, "customer/alice.yaml", t);
-    const r = await build({ ctx });
-    expect(r.quarantined).toHaveLength(1);
-    expect(r.records).toBe(1); // only the quarantine record
+    const m = moved(await checkPath(ctx));
+    expect(m).toHaveLength(1);
+    expect((await build({ ctx })).records).toBe(1); // only the quarantine record
     expect(await Bun.file(join(dir, "root/customer/alice.yaml")).exists()).toBe(false);
-    const q = await verifyFile(await readData(dir, r.quarantined[0].quarantinePath!.slice(1)), ctx.keys);
+    const q = await verifyFile(await readData(dir, m[0].quarantinePath.slice(1)), ctx.keys);
     expect(q.ok).toBe(true);
     expect(q.state.removed).toBe(t);
     expect(q.state.source).toBe("/customer/alice.yaml"); // no valid header, so no record id

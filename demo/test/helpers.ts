@@ -1,3 +1,4 @@
+import type { CheckResult } from "../src/check.ts";
 import { mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -51,6 +52,9 @@ export async function seedAlice(ctx: WriterContext) {
   const a = await createRecord(ctx, { path: "/customer/alice.yaml", schema: "customer@1", data: { name: "Alice", email: "alice@example.com" } });
   return { ...a, ref: `/customer/alice.yaml#${a.record_id}` };
 }
+
+/** The files a check run moved to quarantine. */
+export const moved = (rs: CheckResult[]) => rs.filter((r): r is Extract<CheckResult, { status: "quarantined" }> => r.status === "quarantined");
 
 export const readData = async (dir: string, p: string) => readFile(join(dir, "root", p), "utf8");
 export const writeData = async (dir: string, p: string, s: string) => writeFile(join(dir, "root", p), s);

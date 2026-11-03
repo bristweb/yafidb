@@ -1,30 +1,25 @@
-// Build: an optional pass. Given a path, find the folders under it (from the manifest), verify each file
-// with its folder's schema, heal corrupt data through the quarantine worker, then run the build pipeline.
+// Build: an optional pass. Given a path, find the folders under it (from the manifest), read the files there, and run
+// the build pipeline. A build does no validation and no quarantine. A build that wants checked data adds the check tool
+// as a step (`command: [bun, src/check-cli.ts, /order/]`) and makes the other steps run `after` it.
 // Files stay the source of truth; build steps only read them and write elsewhere.
 import { mkdir, rm, writeFile } from "node:fs/promises";
 import { dirname, isAbsolute, join, resolve } from "node:path";
 import type { WriterContext } from "./checks.ts";
-import { verifyFile, type VerifyResult } from "./format.ts";
-import { healFile } from "./heal.ts";
+import { parseFile, type VerifyResult } from "./format.ts";
 import { foldersUnder, listRecords, ownerOf, type Owner, type Step } from "./manifest.ts";
 import { runPipeline } from "./pipeline.ts";
 import { callUrl, runCommand } from "./plugins.ts";
 import { findRefs, parseRef, resolveRef, type Ref } from "./refs.ts";
-import { validate } from "./schema.ts";
 import { renderSite } from "./site.ts";
 
 export interface BuiltRef { pointer: string; raw: string; ref: Ref | null; error: string | null }
-export interface BuiltRecord { path: string; folder: string; schema: string; v: VerifyResult; refs: BuiltRef[]; warnings: string[]; body: string }
+export interface BuiltRecord { path: string; folder: string; schema: string; v: VerifyResult; refs: BuiltRef[]; body: string }
 export interface BuildReport {
   path: string; workers: Owner[]; records: number;
-  quarantined: { path: string; quarantinePath?: string; reason: string; skipped?: string; followUps?: Record<string, string> }[];
-  unsupported: { path: string; version: string }[];   // files whose header version this reader does not list; not corrupt, not moved
-  unowned: string[];                                  // files under the path that no worker folder covers
-  brokenRefs: { path: string; pointer: string; error: string }[];
   steps: Record<string, { status: "ok" | "failed" | "skipped"; error?: string }>;
 }
 
-/** What a built-in step sees: the verified records. Command and URL steps never see this. */
+/** What a built-in step sees: the records as read (nothing is checked). Command and URL steps never see this. */
 interface Built { records: BuiltRecord[]; out: string }
 const BUILTINS: Record<string, (b: Built) => Promise<void>> = {
   "static-site": async ({ records, out }) => {
@@ -39,47 +34,23 @@ const BUILTINS: Record<string, (b: Built) => Promise<void>> = {
   },
 };
 
-/** `ctx` supplies storage, keys, the manifest and (to heal) a signing key. `ctx.rootDir` is the root on local disk. */
+/** `ctx` supplies storage and the manifest. `ctx.rootDir` is the root on local disk. */
 export async function build(o: { ctx: WriterContext; path?: string }): Promise<BuildReport> {
   const { ctx } = o;
   const cwd = ctx.cwd ?? process.cwd();
   const path = o.path ?? "/";
   if (!/^\/([^/]+\/)*$/.test(path)) throw new Error(`build path must be a folder like / or /order/, got ${path}`);
-  const report: BuildReport = { path, workers: foldersUnder(ctx.manifest, path), records: 0, quarantined: [], unowned: [], unsupported: [], brokenRefs: [], steps: {} };
+  const report: BuildReport = { path, workers: foldersUnder(ctx.manifest, path), records: 0, steps: {} };
 
-  // Pass 1: verify against each folder's schema, and heal.
-  const files = (await listRecords(ctx.storage)).filter((p) => p.startsWith(path));
-  const healed = new Set<string>();
-  for (const p of files) {
-    const owner = ownerOf(ctx.manifest, p);
-    if (!owner) { report.unowned.push(p); continue; }
-    const f = await ctx.storage.get(p);
-    if (!f) continue;
-    const v = await verifyFile(f.body, ctx.keys);
-    if (v.unsupported) { report.unsupported.push({ path: p, version: v.unsupported }); continue; }   // newer, not corrupt: left alone
-    const wrongSchema = !!v.header && v.header.schema !== owner.schema;
-    if (v.ok && !wrongSchema) continue;
-    const reason = wrongSchema ? `schema ${v.header!.schema} does not match folder schema ${owner.schema}` : v.error!;
-    const r = await healFile(ctx, p, f, v, reason, !wrongSchema && !!v.header);
-    report.quarantined.push("quarantinePath" in r ? { path: p, reason, ...r } : { path: p, reason, skipped: r.skipped });
-    if ("quarantinePath" in r) healed.add(p);
-  }
-
-  // Pass 2: read the files and build records. A file that could not be healed is trusted only up to the break.
+  // Read the files under the path. A file in no worker folder, or that does not parse, is simply not a record.
   const records: BuiltRecord[] = [];
-  for (const p of await listRecords(ctx.storage)) {
-    if (!p.startsWith(path)) continue;
+  for (const p of (await listRecords(ctx.storage)).filter((x) => x.startsWith(path))) {
     const owner = ownerOf(ctx.manifest, p);
     const f = owner && (await ctx.storage.get(p));
     if (!owner || !f) continue;
-    const v = await verifyFile(f.body, ctx.keys);
-    if (!v.header || v.header.schema !== owner.schema) continue; // reported under quarantined
-    const warnings: string[] = [];
-    if (!v.ok) warnings.push(`Trusted up to entry ${v.entries.length}; the rest of the file is ignored (${v.error}).`);
-    const schema = await ctx.getSchema(owner.schema);
-    const bad = schema && v.entries.length ? validate(schema, v.state) : null;
-    if (bad) warnings.push(`Current state fails ${owner.schema}: ${bad}`);
-    records.push({ path: p, folder: owner.folder, schema: owner.schema, v, refs: [], warnings, body: f.body });
+    const v = await parseFile(f.body);
+    if (!v.header) continue;
+    records.push({ path: p, folder: owner.folder, schema: v.header.schema, v, refs: [], body: f.body });
   }
   // References resolve across the whole root, not only the build path.
   const byPath = new Map(records.map((r) => [r.path, r.v]));
@@ -87,7 +58,6 @@ export async function build(o: { ctx: WriterContext; path?: string }): Promise<B
     for (const x of findRefs(r.v.state)) {
       const error = await resolveRef(x.raw, async (p) => byPath.get(p) ?? (await lookup(ctx, p)));
       r.refs.push({ ...x, ref: parseRef(x.raw), error });
-      if (error) report.brokenRefs.push({ path: r.path, pointer: x.pointer, error });
     }
   }
   report.records = records.length;
@@ -104,7 +74,7 @@ export async function build(o: { ctx: WriterContext; path?: string }): Promise<B
 
 async function lookup(ctx: WriterContext, p: string): Promise<VerifyResult | null> {
   const f = await ctx.storage.get(p);
-  return f ? verifyFile(f.body, ctx.keys) : null;
+  return f ? parseFile(f.body) : null;
 }
 
 async function runStep(ctx: WriterContext, s: Step, b: { records: BuiltRecord[]; path: string; cwd: string }) {

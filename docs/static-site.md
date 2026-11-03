@@ -8,7 +8,7 @@ You store your records as YafiDB files. Compile turns those files into a complet
 
 Visitors only ever load static files, so the site is fast and cheap to host. Changes can come in one of two ways:
 
-- **Git only.** Records are YAML files in a Git repository. You create and edit them with a local YafiDB tool, which checks each record against its schema. The build runs as a test in the repository, so a bad record fails it. The Git host, such as GitHub or GitLab, builds and publishes the site on each push. No write API runs, so there is no write surface beyond the Git host. This suits sites that change rarely, because each change is a commit. Git history shows who changed what. Authorship is verified only when commits are signed.
+- **Git only.** Records are YAML files in a Git repository. You create and edit them with a local YafiDB tool, which checks each record against its schema. The check tool runs as a test in the repository, so a bad record fails it. The Git host, such as GitHub or GitLab, builds and publishes the site on each push. No write API runs, so there is no write surface beyond the Git host. This suits sites that change rarely, because each change is a commit. Git history shows who changed what. Authorship is verified only when commits are signed.
 - **Optional workers.** A minimal write API, run as a few small workers, accepts changes such as form submissions. Each writer validates the record, signs it, and adds it to storage. The site is then rebuilt and redeployed. Writers handle only writes, and visitors never reach them.
 
 ## How the pieces fit

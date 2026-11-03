@@ -70,7 +70,7 @@ flowchart LR
 
 ## Architecture
 
-A deployment is a **root**: one manifest, `/yafi.yaml`, plus the folders it governs. The manifest gives each **worker** sole write authority over its own folders and maps every folder to one schema. Workers may read anywhere in the root, so they can check references and permissions. Writes and builds run as **pipelines** of steps in any language, and any step can be replaced.
+A deployment is a **root**: one manifest, `/yafi.yaml`, plus the folders it governs. The manifest gives each **worker** sole write authority over its own folders and maps every folder to one schema. Workers may read anywhere in the root, so they can check references and permissions. Writes and builds run as **pipelines** of steps in any language, and any step can be replaced. A standalone **check tool** verifies files and quarantines what is wrong. A worker always runs it before writing, and a build can run it as an opt-in step.
 
 ```mermaid
 flowchart LR
@@ -78,10 +78,12 @@ flowchart LR
     M --> P[Pipelines<br/>write checks, build steps]
     W --> F[(Record files)]
     F --> B[Build<br/>optional]
-    F -.corrupt data.-> Q[Quarantine worker]
+    W --> K[Check tool<br/>before every write]
+    K -.wrong.-> Q[Quarantine worker]
+    B -.opt-in.-> K
 ```
 
-Terms, the manifest format, and the build and quarantine flows are in [docs/architecture.md](docs/architecture.md).
+Terms, the manifest format, and the check, build and quarantine flows are in [docs/architecture.md](docs/architecture.md).
 
 ## How writes are validated
 
@@ -115,7 +117,7 @@ Most of the site is static files: pages, styles, and data that any web host can 
 
 Changes can come in two ways:
 
-- **Git only.** Records are YAML files in a Git repository. The author creates and edits them with a local YafiDB tool, which checks each record against its schema. The same build runs as a test in the repository, so a bad record fails it. GitHub, GitLab, or a similar host builds and publishes the site on each push. No write API runs, so this mode adds no write surface beyond the Git host itself. This suits sites that change rarely, because each change is a commit. Git history shows who changed what, but authorship is verified only when commits are signed.
+- **Git only.** Records are YAML files in a Git repository. The author creates and edits them with a local YafiDB tool, which checks each record against its schema. The check tool runs as a test in the repository, so a bad record fails it. GitHub, GitLab, or a similar host builds and publishes the site on each push. No write API runs, so this mode adds no write surface beyond the Git host itself. This suits sites that change rarely, because each change is a commit. Git history shows who changed what, but authorship is verified only when commits are signed.
 - **Optional workers.** A minimal write API, run as a few small workers, accepts changes such as form submissions. Each one validates the record, signs it, and writes it to storage. The site is then rebuilt and redeployed. The workers handle only writes, and visitors never reach them.
 
 Either way, the site is built from the records. The build can run in CI, or YafiDB can commit the generated site to a publish repository. See [docs/static-site.md](docs/static-site.md).

@@ -30,7 +30,8 @@ This log records each decision, the alternatives that were considered and reject
 | 22 | Signature format | JOSE (RFC 7515) with Ed25519 (`alg` `Ed25519`, RFC 9864) | Invented signature fields, plain SHA-256 |
 | 23 | Write coordination | Open, not configurable. Sagas proposed, owners under consideration | Central worker, 2PC |
 | 24 | Root, workers, and pipelines | One manifest grants folder authority and defines pipelines. Builds are optional | Builds required, shared write folders, per-hook configuration |
-| 25 | Format version and header | The version rides on the header mode (`header@1.0.0`), matched exactly against the reader's list. The header holds only `schema` | A `yafi_schema` field, a separate `record_schema` field, version ranges |
+| 25 | Format version and header | The version rides on the header mode (`header@1.0.0`), matched exactly against the check tool's list. The header holds only `schema` | A `yafi_schema` field, a separate `record_schema` field, version ranges |
+| 26 | The check tool | Validation and quarantine live in one standalone check tool. A worker always runs it before writing. Builds do no validation, and may opt in | Builds that validate or quarantine, a general reader role, skipping files with unknown versions |
 
 ## 1. Storage backend: any object storage
 
@@ -249,11 +250,19 @@ The build can run in CI, or YafiDB can commit the generated site to a publish re
 
 ## 25. Format version rides on the header mode
 
-**Chosen:** the header line is `yafi: header@1.0.0 <time> <JWS>`, with the same shape as every entry. The header's one data field is `schema`, which replaces `record_schema`, and the `yafi_schema` field is dropped. The signed claims are the versioned mode, `iat`, `nonce`, and `schema`. A reader keeps a list of versions it supports and matches the full version text exactly. Any string is allowed (semver, beta, stable). A file with an unlisted version is unusable to that reader: builds skip and report it, writers refuse it, and it is not quarantined.
+**Chosen:** the header line is `yafi: header@1.0.0 <time> <JWS>`, with the same shape as every entry. The header's one data field is `schema`, which replaces `record_schema`, and the `yafi_schema` field is dropped. The signed claims are the versioned mode, `iat`, `nonce`, and `schema`. The check tool keeps a list of versions it supports and matches the full version text exactly. Any string is allowed (semver, beta, stable). A file with an unlisted version is corrupt to the tool, like any other file it cannot verify (decision 26).
 
-**Rejected:** a separate version field, which gives the header an extra shape. Version ranges or ordering, which require every version to follow one scheme. Quarantining files with an unknown version, which would let an old reader move newer data it simply cannot read.
+**Rejected:** a separate version field, which gives the header an extra shape. Version ranges or ordering, which require every version to follow one scheme.
 
-**Why:** the signature already covers the mode, so the version is signed with no extra field. Exact matching keeps a reader's behaviour simple and predictable.
+**Why:** the signature already covers the mode, so the version is signed with no extra field. Exact matching keeps behaviour simple and predictable.
+
+## 26. The check tool
+
+**Chosen:** the enforced checks (version, signatures and chain, folder schema) and quarantine form one standalone tool, the check tool, which can run alone as a command. Anything that runs it automatically quarantines what is wrong, through the quarantine worker. A worker always runs it on a file before writing. A build does no validation or quarantine and only reads files and runs steps. An admin may add the check tool to a build as an ordinary opt-in step, and put the steps that need checked data `after` it. The shipped build steps read files as they are.
+
+**Rejected:** a general reader role that validates or quarantines. Builds that verify or quarantine by default. A build-side report of problems. Skipping a file with an unknown version, which would leave an unusable file in a worker folder instead of recovering it.
+
+**Why:** records are often converted and published, so the only things that read the YAML may be a worker or a build. Putting all validation in one tool keeps one place to trust, and keeps builds simple. Whoever wants checked data asks the tool for it, and the same quarantine rules apply however it is run.
 
 ## Open questions
 

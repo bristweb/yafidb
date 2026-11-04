@@ -78,7 +78,13 @@ A deployment is a **root**: one manifest, `/yafi.yaml`, plus the folders it gove
 
 For example, a `crm` worker writes `/customer/` and `/lead/` (both `customer@1`), while a `shop` worker writes `/order/` (`order@1`) and may read `/customer/`.
 
-Before a worker writes, its write screens run: Yafi's own screens plus any that are plugged in. If they pass, the write happens. If they fail, nothing is written. Quarantine is just one effect of the screens: data found to be wrong is logged to quarantine before the file is fixed or removed. A write that succeeds is always in the file. A write that loses a race is refused with nothing written, and no locks are used. Terms and the manifest format are in [docs/architecture.md](docs/architecture.md), the screens are in [docs/record-format.md](docs/record-format.md#enforced-screens), and the races are in [Concurrent writes](docs/record-format.md#concurrent-writes).
+Before a worker writes, its write screens run: Yafi's own screens plus any that are plugged in.
+
+- **If they pass,** the write happens. **If they fail,** nothing is written.
+- **Quarantine** is just one effect of the screens: data found to be wrong is logged to quarantine before the file is fixed or removed.
+- **A write that succeeds** is always in the file. **A write that loses a race** is refused with nothing written, and no locks are used.
+
+Terms and the manifest format are in [docs/architecture.md](docs/architecture.md), the screens are in [docs/record-format.md](docs/record-format.md#enforced-screens), and the races are in [Concurrent writes](docs/record-format.md#concurrent-writes).
 
 ## Goals
 
@@ -88,12 +94,29 @@ Before a worker writes, its write screens run: Yafi's own screens plus any that 
 4. **Scale when needed.** Deriving a database for heavy queries is optional, and you choose the engine.
 5. **Composable.** Most parts, from storage to schema language, can be chosen to fit the infrastructure of each application.
 
-## Good fit and limits
+## Is YafiDB a good fit?
 
-- **Good fit:** records that change rarely per entity and have a clear owner: ledgers, profiles, posts, ownership, follows, contracts, comments, and messages. Small collections such as recipes and guestbooks fit too.
-- **Not a fit:** firehose streams such as access logs and telemetry. Use a purpose-built pipeline for those.
-- **Git-only publishing:** every change is a commit, so use it only for sites that change rarely.
-- **Tradeoffs:** derived reads can lag writes by a few seconds, and storage request costs rise as write frequency grows. See [docs/tradeoffs.md](docs/tradeoffs.md).
+YafiDB fits records that change rarely per entity and have a clear owner.
+
+### Good fit
+
+- **Ledgers and contracts** — signed, append-only history is built in
+- **Profiles, posts, and pages** — owned by one person or team, edited occasionally
+- **Ownership, follows, and subscriptions** — per-user facts with modest write rates
+- **Comments and messages** — owned records, written at human pace
+- **Small collections** — recipes, guestbooks, directories, cap tables
+
+### Not a good fit
+
+- **Firehose streams** — access logs, telemetry, view counts, and watch-time data belong in a purpose-built streaming pipeline
+
+### Limits to know
+
+- **Derived reads lag writes** by a few seconds, because outputs are rebuilt from the files
+- **Storage request costs rise with write frequency**, not with the number of records
+- **Git-only publishing is bounded by change frequency** — every change is a commit, so Git is a good fit only while the repository can support the change rate
+
+The full list of costs and risks is in [docs/tradeoffs.md](docs/tradeoffs.md), and a worked example of what fits and what does not is in [Fit and scale](docs/design.md#fit-and-scale).
 
 ## Use case: a static website with optional workers
 
@@ -127,17 +150,29 @@ Templates such as `s3+yaml+none` set the storage, format, and derived-output par
 
 New to YafiDB? Start with [docs/design.md](docs/design.md), then browse [examples/](examples/).
 
+**How it works**
+
 | File | What it answers |
 | --- | --- |
-| [docs/architecture.md](docs/architecture.md) | Root, manifest, workers, pipelines, builds, and quarantine |
 | [docs/design.md](docs/design.md) | How the whole system works, with worked examples |
+| [docs/architecture.md](docs/architecture.md) | Root, manifest, workers, pipelines, builds, and quarantine |
 | [docs/record-format.md](docs/record-format.md) | What each part of a record means, and how writes are screened and signed |
+
+**How to use it**
+
+| File | What it answers |
+| --- | --- |
 | [docs/configuration.md](docs/configuration.md) | How to set up each part, with templates and plug-in interfaces |
 | [docs/static-site.md](docs/static-site.md) | How to publish a static website, with or without workers |
-| [docs/decisions.md](docs/decisions.md) | What was decided, what was rejected, and why |
-| [docs/tradeoffs.md](docs/tradeoffs.md) | The real costs and risks |
-| [docs/prior-art.md](docs/prior-art.md) | Related projects and what each one teaches |
-| [docs/comparison.md](docs/comparison.md) | How YafiDB compares with more than 50 other tools, and when to pick one of them instead |
 | [examples/](examples/) | Sample config, record, and schema files |
+
+**How to evaluate it**
+
+| File | What it answers |
+| --- | --- |
+| [docs/tradeoffs.md](docs/tradeoffs.md) | The real costs and risks |
+| [docs/decisions.md](docs/decisions.md) | What was decided, what was rejected, and why |
+| [docs/comparison.md](docs/comparison.md) | How YafiDB compares with more than 50 other tools, and when to pick one of them instead |
+| [docs/prior-art.md](docs/prior-art.md) | Related projects and what each one teaches |
 
 *YafiDB stands for "Yet Another File Database".*

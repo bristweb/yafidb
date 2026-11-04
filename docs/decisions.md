@@ -1,6 +1,6 @@
 # Decision log
 
-This log records each decision, the alternatives that were considered and rejected, and the reason. Each entry stands alone, so you can read only the one you care about.
+This log records each decision, the alternatives that were considered and rejected, and the reason. Each entry stands alone, so you can read only the one you care about. Two topics without a number, [file rollover](#file-rollover) and [record modes](#record-modes-checkpoint-patch-diff), are settled design points listed after the [open questions](#open-questions).
 
 ## Summary
 
@@ -274,13 +274,15 @@ The build can run in CI, or YafiDB can commit the generated site to a publish re
 - **Rollover and record id.** A file is one record with one id, so a rollover to a new file raises how the new file ties to the old one.
 - **Official values (decision 10).** Decision 10 says the writer or the build computes official values. Confirm which one, or both.
 
-## File rollover
+## Settled design points
+
+### File rollover
 
 **Chosen:** when a file reaches its size limit, YafiDB starts a new file. The engineer sets the limit for each data type, and YafiDB provides a default. An optional schedule (for example yearly) also starts new files. Whichever comes first wins. Only the newest file is ever written, so existing files are never updated.
 
 **Why:** editing existing files is the hardest part of a file database: object storage rewrites whole objects, and in-place edits risk conflicts and corruption. Capping file size bounds the cost of every write and leaves older files immutable.
 
-## Record modes: checkpoint, patch, diff
+### Record modes: checkpoint, patch, diff
 
 **Chosen:** every record sets exactly one mode. `checkpoint` holds the complete record, `patch` holds only changed fields (JSON Merge Patch rules), and `diff` holds unified line diffs of text fields. The mode is never assumed, and records never mix modes. JSON Patch (RFC 6902) and format-specific patch standards are not supported.
 

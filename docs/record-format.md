@@ -1,6 +1,6 @@
 # Record format and write path
 
-Detail behind the README. Start there.
+Detail behind the [README](../README.md). Start there.
 
 ## The example record
 
@@ -13,7 +13,7 @@ Detail behind the README. Start there.
 
 ### Free text
 
- The `note` field takes any text with no escaping. The same `note` in JSON needs every quote and line break escaped:
+The `note` field takes any text with no escaping. The same `note` in JSON needs every quote and line break escaped:
 
 ```json
 {"note": "Gift message: \"Happy 60th, Mom!\" Love, José & Ana 🎉\nLeave at the side door --- not the front (dog #2 bites).\nSorry it's late :\\ wrap it in {blue} paper if you can.\n"}
@@ -28,7 +28,7 @@ In the file, the writer stores this as an indented literal block under `note: |`
 - **Record files:** the data itself, stored in any object storage, such as Amazon S3 or Cloudflare R2. Files are split per person or object and per period, so each write rewrites only a small file.
 - **Build steps:** optional steps that make derived outputs from the files. The files stay the source of truth. A derived output exists to meet a need the files do not meet well on their own: a static site for fast, cheap publishing, a scalable database for heavy queries, or a format another tool can read. Each output can be deleted and rebuilt from the files.
 
-Writes and reads take separate paths. A write goes through a writer. A read skips the writers and goes to a derived output. If no build is set up, reads go to the files directly. Reads from a derived output can trail writes by a few seconds. Some sites need no writer at all; see the static website use case.
+Writes and reads take separate paths. A write goes through a writer. A read skips the writers and goes to a derived output. If no build is set up, reads go to the files directly. Reads from a derived output can trail writes by a few seconds. Some sites need no writer at all; see the [static website use case](static-site.md).
 
 ## Format versions
 

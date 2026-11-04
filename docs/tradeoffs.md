@@ -8,11 +8,11 @@ The configuration loader, the writer, the build steps, the record format code, a
 
 ## Write coordination may add platform lock-in
 
-Write coordination is still an open design decision. Sagas are the proposed direction. Owners on Cloudflare Durable Objects are one option under consideration, and so is celld, which is self-hosted. Self-hosted options conflict with the goal of having no servers. An owner runtime would be the one piece tied to a platform. The data (readable files), the schemas (JSON Schema and CEL), and the API code (Hono) are portable. If an owner runtime is chosen, keeping its job small (accept, check, queue, flush) would make it easier to reimplement.
+Write coordination is still an open design decision. Sagas are the proposed direction. Owners on Cloudflare Durable Objects are one option under consideration, and so is celld, which is self-hosted. Self-hosted options conflict with the goal of having no servers. An owner runtime would be the one piece tied to a platform. The data (readable files), the schemas (JSON Schema and CEL), and the API code (Hono) are portable. If an owner runtime is chosen, keeping its job small (accept, screen, queue, flush) would make it easier to reimplement.
 
 ## Eventual consistency
 
-Reads from a derived output trail writes by seconds, because it is built from files after they are written. Anything that needs an instant check cannot rely on a derived output. If sagas are used for write coordination, saga steps appear as "pending" until confirmed. A pending overlay can give users their own writes at once.
+Reads from a derived output trail writes by seconds, because it is built from files after they are written. Anything that needs an instant screen cannot rely on a derived output. If sagas are used for write coordination, saga steps appear as "pending" until confirmed. A pending overlay can give users their own writes at once.
 
 ## Hot accounts
 
@@ -52,7 +52,7 @@ If sagas are used, readers have to handle pending saga entries. Official totals 
 
 ## Gaps and limits in the schema standards
 
-- **JSON Schema is clumsy for rules across fields.** `if/then` blocks get long. CEL checks (`x-validate`) cover this, and the engineer chooses.
+- **JSON Schema is clumsy for rules across fields.** `if/then` blocks get long. CEL rules (`x-validate`) cover this, and the engineer chooses.
 - **CEL is less flexible than a full programming language.** It cannot define new functions. Related records are passed in as variables, and a small standard `sum` extension is registered everywhere. For multipliers, sums, conditions, and percentages this is plenty.
 - **JavaScript CEL implementations are newer than the Go and Java ones.** The writer and other code are TypeScript or JavaScript, so which CEL implementation gives official results is an open question. The browser value is for display.
 

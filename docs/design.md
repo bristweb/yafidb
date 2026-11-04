@@ -24,7 +24,7 @@ This document describes the whole system: what is stored, how writes and reads w
 
 **YafiDB is a database tool that stores records as files. The files are the single source of truth.**
 
-Files alone are only a collection of files. The writer checks every write against its schema and keeps the files structured properly. That is what turns them into a database. Several parts are configurable. By default, records are YAML files in any object storage, and no derived output is built. See [Configuration](#configuration).
+Files alone are only a collection of files. The writer screens every write against its schema and keeps the files structured properly. That is what turns them into a database. Several parts are configurable. By default, records are YAML files in any object storage, and no derived output is built. See [Configuration](#configuration).
 
 ### How data flows
 
@@ -130,7 +130,7 @@ If the SQLite file is lost, a build rebuilds it from the files. The files can be
 Moving money needs stronger guarantees, so this example uses the proposed write coordination: one owner per account and sagas. That design is still open, so treat these steps as a proposal. Alice has a balance of 500 units and sends 100 units to Bob.
 
 1. **The request arrives** with an idempotency key, `req_7f3a`. This is a unique ID for the action, so a retry can never apply it twice.
-2. **Alice's owner wakes.** The owner is a small writer that is the only writer for Alice's records. It checks her balance (500), sees the transfer is allowed, and queues the record `pending, -100, transfer t_881`.
+2. **Alice's owner wakes.** The owner is a small writer that is the only writer for Alice's records. It screens her balance (500), sees the transfer is allowed, and queues the record `pending, -100, transfer t_881`.
 3. **Bob's owner wakes.** It queues `+100, transfer t_881` in Bob's records.
 4. **Alice's owner confirms.** It queues `confirm t_881`. If Bob's owner had failed, Alice's owner would queue `reverse t_881` instead.
 5. **Each owner writes** its queued records to its own file in storage, with a conditional write.
@@ -236,7 +236,7 @@ This section answers one question: how can the record format change later withou
 
 Each file's header names the format version in its mode, for example `yafi: header@1.0.0 ...`. Today the one format is YAML. The signed claims hold the version, so the signature covers it. The design supports format changes in two ways.
 
-1. **The header names the version.** Code that reads or writes a file uses the version on its header, and the check tool keeps a list of the versions it supports. A file cannot change its own version, and a version not on the list is corrupt. See [Format versions](record-format.md#format-versions).
+1. **The header names the version.** Code that reads or writes a file uses the version on its header, and the screen tool keeps a list of the versions it supports. A file cannot change its own version, and a version not on the list is corrupt. See [Format versions](record-format.md#format-versions).
 2. **Switching versions starts new files.** A new format needs an implementation that reads and writes it. Moving existing data to it is a migration that follows the same pattern as a schema migration: the migration script is deterministic and starts new files with a clear link to the old ones. Old files stay readable under their old version, so nothing has to be converted before it is needed.
 
 ## Writes
@@ -247,7 +247,7 @@ Writes answer one question: how do changes get into the files with the least CPU
 
 A writer does these steps for each request, and nothing more.
 
-1. **Check the request.** It runs the check tool on the existing file, then the enforced checks (see [How a write is validated](#how-a-write-is-validated)).
+1. **Screen the request.** It runs the screen tool on the existing file, then the enforced screens (see [How a write is validated](#how-a-write-is-validated)).
 2. **Sign the entry.** It sets the `yafi` line and signs the entry over the previous signature (see [Integrity](#integrity)).
 3. **Add it to the file.** It adds the entry to the end of its file and writes the file with a conditional write, so if the file changed since it was read, nothing is written and the caller retries.
 4. **Sleep.** It holds no database and runs no queries, so it can wake per request and cost nothing when idle.
@@ -278,7 +278,7 @@ Each write to a file produces an object-created notification (for example, [R2 e
 
 ### Builds
 
-A build is the pipeline described in [architecture.md](architecture.md#builds): optional steps from the manifest, so an admin can replace or remove any of them. A build reads the files as they are and validates nothing. Checking is the check tool's job. An admin who wants checked data adds the check tool as a step and puts the steps that need it `after` it.
+A build is the pipeline described in [architecture.md](architecture.md#builds): optional steps from the manifest, so an admin can replace or remove any of them. A build reads the files as they are and validates nothing. Screening is the screen tool's job. An admin who wants screened data adds the screen tool as a step and puts the steps that need it `after` it.
 
 A build ingests **only the changed files**.
 
@@ -333,11 +333,11 @@ A schema is the full definition of one data type. Schemas are **language-neutral
 
 ### How a write is validated
 
-Schemas are what make the files a cohesive database. Without them the files are only a collection of files. Every write passes the enforced checks (see [record-format.md](record-format.md#enforced-checks)), and the schema's part is:
+Schemas are what make the files a cohesive database. Without them the files are only a collection of files. Every write passes the enforced screens (see [record-format.md](record-format.md#enforced-screens)), and the schema's part is:
 
 1. **Look up the schema** for the file's folder in the manifest.
-2. **Check the fields** against the schema's JSON Schema: names, types, allowed values, and required fields. This check is required for every entry.
-3. **Check the extra rules**, if the schema has any, in its CEL expressions (`x-validate`), such as rules that involve more than one field.
+2. **Screen the fields** against the schema's JSON Schema: names, types, allowed values, and required fields. This step is required for every entry.
+3. **Screen the extra rules**, if the schema has any, in its CEL expressions (`x-validate`), such as rules that involve more than one field.
 4. **Reject if anything fails.** An invalid entry is refused and nothing is written. The writer also rejects any user field named `yafi`, and any duplicate key.
 5. **Sign and write.** The writer signs the entry over the previous signature and writes it with a conditional write (see [Writes](#writes)).
 
@@ -351,7 +351,7 @@ What the developer chooses is how they write the schemas:
 
 - **The JSON Schema** for the fields, which says exactly what a valid record is.
 - **CEL computed values** (`x-computed`), such as formulas and totals.
-- **Extra CEL checks** (`x-validate`), such as rules across several fields.
+- **Extra CEL rules** (`x-validate`), such as rules across several fields.
 
 ### Language and runtime
 
@@ -410,7 +410,7 @@ CEL is built so an expression can only compute.
 
 It is an open specification with a shared conformance test suite, and it runs untrusted expressions in Kubernetes admission policies.
 
-### Save-time checks
+### Save-time screens
 
 When a schema is saved, the system does five things before accepting it:
 
@@ -445,7 +445,7 @@ Each entry's signature is a compact JWS whose claims hold the mode, the time, a 
 - **User signature (open):** an optional second signature, from a user who asked for the action, is not in the current format.
 - **Shared secrets:** HS256 (RFC 7518) can be used, but a shared secret cannot prove who wrote an entry to anyone who holds the secret. A plain hash such as SHA-256 is not enough either, because anyone who edits a file can recompute it.
 - **Separate keys:** the signing key is kept separate from storage credentials, so storage access alone does not allow forging signed records.
-- **Git-only records** have no writer, so they are not signed. Git history shows who changed them. Authorship is verified only when commits are signed. The check tool still checks their structure and schema as a test.
+- **Git-only records** have no writer, so they are not signed. Git history shows who changed them. Authorship is verified only when commits are signed. The screen tool still screens their structure and schema as a test.
 
 An **index** can be turned on to make verification faster: a small file listing each file's last signature, so a verifier does not have to read every file to check the latest state.
 
@@ -476,14 +476,14 @@ The owner is per account, not per kind of action. Alice's account and Bob's acco
 
 Sagas are the proposed direction for actions that touch several accounts. Such an action is a **saga**: a series of steps, each handled by one account's owner, tied together by a shared transaction ID.
 
-1. **Pending.** The first owner checks its rules and records a pending change.
+1. **Pending.** The first owner screens its rules and records a pending change.
 2. **Apply.** Each other owner records its own side of the change.
 3. **Confirm.** The first owner records that all sides succeeded.
 4. **Reverse.** If any step fails, a reversing record undoes the earlier steps.
 
 A progress log lets a crashed saga resume. Readers treat pending entries as not final. Every account keeps its own complete record, and the shared ID lets an auditor match the sides.
 
-The same pattern covers three-way trades, bill splits, and account merges. At each step that needs to block conflicts, the owner for that account serializes the check.
+The same pattern covers three-way trades, bill splits, and account merges. At each step that needs to block conflicts, the owner for that account serializes the screen.
 
 ### Hot accounts
 
@@ -503,7 +503,7 @@ Three different problems can corrupt data. They have different fixes, so naming 
 
 | Problem | What happens | Fix in this design |
 | --- | --- | --- |
-| **Race** | Two actions run at once and both pass a check | A single owner per account serializes them (proposed, open decision) |
+| **Race** | Two actions run at once and both pass a screen | A single owner per account serializes them (proposed, open decision) |
 | **Partial failure** | An action does some steps and then stops | Sagas with reversals, plus idempotent retries (proposed, open decision) |
 | **Torn read** | A reader sees an update half applied | Complete published snapshots and chained records |
 
@@ -578,7 +578,7 @@ This is the same core idea as the large version, with a single tier. Its single 
 - **Write coordination:** how concurrent writes to the same file stay correct. Sagas and one owner per account are the proposed direction. Owners on Durable Objects or celld are options under consideration.
 - **Idempotency keys:** whether entries carry one, so a retry after a success cannot add a second entry.
 - **Rollover and record id:** a file is one record with one id. How a rolled-over file keeps that id is open.
-- **Links to current state:** a link to a field of the current state with no entry id (`#id//field`) is undecided, and the current checks reject it.
+- **Links to current state:** a link to a field of the current state with no entry id (`#id//field`) is undecided, and the current screens reject it.
 - **User signatures:** whether an entry can carry a second, user signature.
 - **Git as storage:** whether Git can hold records for sites beyond Git-only sites. This stays open (see [Configuration](#configuration)).
 - **Index format:** the exact layout of the optional chain index and of shared physical files at scale.

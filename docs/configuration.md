@@ -6,7 +6,7 @@ This document explains the parts of a YafiDB project that you can choose, and ho
 
 A project has two YAML files with different jobs. **`yafidb.yaml`** holds deployment settings and sits outside the data: where the storage is, which keys sign and verify, and where workers run. **`/yafi.yaml`**, the manifest, sits at the top of the root next to the data. It holds who may write where, which schema each folder uses, and the pipelines (see [architecture.md](architecture.md#the-manifest)). These are the parts of the deployment settings you can choose. Each has a default.
 
-- **Record format:** how records are written in a file. The version rides on each file's header (`header@1.0.0`), and the check tool keeps the list of versions it supports. YAML today. Other formats only if someone builds them.
+- **Record format:** how records are written in a file. The version rides on each file's header (`header@1.0.0`), and the screen tool keeps the list of versions it supports. YAML today. Other formats only if someone builds them.
 - **Storage:** where the files live. Any object storage, such as Amazon S3 or Cloudflare R2. Git for Git-only sites.
 - **Schema language:** how each schema is written. JSON Schema, with CEL for computed values and checks.
 - **Signing:** the algorithm that signs each entry. Ed25519 by default. Other JOSE algorithms can be named by their `alg` value. A shared-secret option such as HS256 cannot prove who wrote a record. Each signature covers the previous one, so entries are always chained.
@@ -53,7 +53,7 @@ This section describes what the record format, storage, and derived output must 
 
 **A record format must provide:**
 
-- A name and version, such as `header@1.0.0`, on each file's header. The check tool keeps the list of versions it supports, and a file cannot choose its own.
+- A name and version, such as `header@1.0.0`, on each file's header. The screen tool keeps the list of versions it supports, and a file cannot choose its own.
 - A way to read a file's bytes into records.
 - A way to write records into bytes.
 - A way to add entries to the end of existing file content. Entries are separated by `---`, after the header.
@@ -69,6 +69,6 @@ This section describes what the record format, storage, and derived output must 
 **Derived output must provide:**
 
 - A name for the output, such as a static site or SQLite, and a place to write it.
-- A way to build the whole output from scratch from all the files, so it can always be deleted and rebuilt. A build only reads: it does no validation, and an admin can add the check tool as a step.
+- A way to build the whole output from scratch from all the files, so it can always be deleted and rebuilt. A build only reads: it does no validation, and an admin can add the screen tool as a step.
 - Optionally, a way to update the output from only the files that changed.
 - A promise never to change the files. The derived output is built from them, and the files stay the source of truth.

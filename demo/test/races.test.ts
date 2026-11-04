@@ -2,7 +2,7 @@
 import { describe, expect, test } from "bun:test";
 import { mkdir, readdir } from "node:fs/promises";
 import { join } from "node:path";
-import { checkPath } from "../src/check.ts";
+import { screenPath } from "../src/screen.ts";
 import { verifyFile } from "../src/format.ts";
 import { asWorker } from "../src/node-context.ts";
 import { MANIFEST_PATH } from "../src/manifest.ts";
@@ -74,7 +74,7 @@ describe("concurrent quarantine", () => {
     expect((await verifyFile(await readData(dir, P), ctx.keys)).ok).toBe(true);
   });
 
-  test("a crash between the quarantine write and the cut is finished by the next check, with no second record", async () => {
+  test("a crash between the quarantine write and the cut is finished by the next screen, with no second record", async () => {
     const { ctx, dir, good } = await orderWithForgedTail();
     let crash = true;
     const crashing = { ...ctx, storage: new Proxy(ctx.storage, {
@@ -85,13 +85,13 @@ describe("concurrent quarantine", () => {
         };
         return typeof t[k] === "function" ? t[k].bind(t) : t[k];
       } }) };
-    await rejects(checkPath(crashing, ORDER));
+    await rejects(screenPath(crashing, ORDER));
     expect(await readData(dir, ORDER)).toBe(good + FORGED);   // not cut yet
     expect(await quarantined(dir)).toHaveLength(1);           // but the bad text is already safe
     crash = false;
     const first = (await quarantined(dir))[0];
 
-    const done = moved(await checkPath(ctx, ORDER));
+    const done = moved(await screenPath(ctx, ORDER));
     expect(done).toHaveLength(1);
     expect(done[0].quarantinePath).toBe(`/quarantine/${first}`);   // the name comes from the removed bytes
     expect(await quarantined(dir)).toEqual([first]);
@@ -100,7 +100,7 @@ describe("concurrent quarantine", () => {
 });
 
 describe("concurrent valid writes", () => {
-  test("two appends that both pass the checks before either writes: one lands, one gets a conflict and writes nothing; a retry chains to the winner", async () => {
+  test("two appends that both pass the screens before either writes: one lands, one gets a conflict and writes nothing; a retry chains to the winner", async () => {
     const { ctx, dir } = await makeEnv();
     const alice = await seedAlice(ctx);
     await createRecord(ctx, { path: ORDER, schema: "order@1", data: order(alice.ref) });
@@ -154,7 +154,7 @@ describe("whole-file quarantine", () => {
     const { ctx, dir } = await makeEnv();
     await junk(dir, "name: forged\n");
     const broken = failing(ctx, "putIfMatch", (p) => p.startsWith("/quarantine/"));
-    const [r] = await checkPath(broken, P);
+    const [r] = await screenPath(broken, P);
     expect(r.status).toBe("failed");
     expect(await readData(dir, P)).toBe("name: forged\n");
     expect(await quarantined(dir)).toHaveLength(0);
@@ -162,7 +162,7 @@ describe("whole-file quarantine", () => {
     expect(err.status).toBe(409);
   });
 
-  test("a failed delete changes nothing about the outcome: the file is quarantined and the write answers retry, and the next check finds the file again", async () => {
+  test("a failed delete changes nothing about the outcome: the file is quarantined and the write answers retry, and the next screen finds the file again", async () => {
     const { ctx, dir } = await makeEnv();
     await junk(dir, "name: forged\n");
     const broken = failing(ctx, "delete", (p) => p === P);
@@ -173,18 +173,18 @@ describe("whole-file quarantine", () => {
     expect(await quarantined(dir)).toHaveLength(1);           // and already logged
     const first = (await quarantined(dir))[0];
 
-    const done = moved(await checkPath(ctx, P));              // the next check finds it again, same record, and deletes
+    const done = moved(await screenPath(ctx, P));              // the next screen finds it again, same record, and deletes
     expect(done[0].quarantinePath).toBe(`/quarantine/${first}`);
     expect(await quarantined(dir)).toEqual([first]);
     expect(await ctx.storage.get(P)).toBeNull();
   });
 
-  test("if the file is still there and has changed, the next check logs the new content too", async () => {
+  test("if the file is still there and has changed, the next screen logs the new content too", async () => {
     const { ctx, dir } = await makeEnv();
     await junk(dir, "name: forged\n");
-    await checkPath(failing(ctx, "delete", (p) => p === P), P);
+    await screenPath(failing(ctx, "delete", (p) => p === P), P);
     await writeData(dir, P, "name: forged\nextra: junk\n");
-    expect(moved(await checkPath(ctx, P))).toHaveLength(1);
+    expect(moved(await screenPath(ctx, P))).toHaveLength(1);
     const names = await quarantined(dir);
     expect(names).toHaveLength(2);
     const removed = await Promise.all(names.map(async (n) => {
@@ -195,19 +195,19 @@ describe("whole-file quarantine", () => {
     expect(await ctx.storage.get(P)).toBeNull();
   });
 
-  test("on R2 the original is deleted after the record is written, and the folder checks clean", async () => {
+  test("on R2 the original is deleted after the record is written, and the folder screens clean", async () => {
     const { ctx } = await makeEnv({ plugins: [] });
     const { kv, bucket } = fakeR2();
     const r2 = { ...ctx, storage: new R2Storage(bucket) };
     await r2.storage.putIfMatch(MANIFEST_PATH, (await ctx.storage.get(MANIFEST_PATH))!.body, null);
     await seedAlice(r2);
     kv.set("customer/junk.yaml", { body: "name: forged\n", etag: "j1" });
-    const m = moved(await checkPath(r2));
+    const m = moved(await screenPath(r2));
     expect(m.map((x) => x.path)).toEqual(["/customer/junk.yaml"]);
     expect(kv.has("customer/junk.yaml")).toBe(false);
     const q = await verifyFile((await r2.storage.get(m[0].quarantinePath))!.body, ctx.keys);
     expect(q.ok && q.state.removed).toBe("name: forged\n");
-    expect((await checkPath(r2)).every((x) => x.status === "ok")).toBe(true);
+    expect((await screenPath(r2)).every((x) => x.status === "ok")).toBe(true);
     expect(asWorker(r2, "main").worker).toBe("main");
   });
 });

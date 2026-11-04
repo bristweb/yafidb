@@ -1,6 +1,6 @@
 # How YafiDB compares
 
-YafiDB keeps records in plain files, checks every write against a schema, and includes a small write API. Many other tools share one or two of those ideas. This page compares YafiDB with more than 50 of them so you can see where it fits and where another tool is the better pick.
+YafiDB keeps records in plain files, screens every write against a schema, and includes a small write API. Many other tools share one or two of those ideas. This page compares YafiDB with more than 50 of them so you can see where it fits and where another tool is the better pick.
 
 A fair warning first. The columns below are the things YafiDB cares about, so YafiDB naturally scores well on them. A list built around query speed, transactions, or live collaboration would favor other tools. The section "What the columns leave out" covers that. YafiDB's row also describes the design, while every other row describes software you can use today.
 
@@ -13,7 +13,7 @@ Each table has the same eight columns, and YafiDB is the first row of every tabl
 | Column | The question it asks |
 | :-- | :-- |
 | **Files** | Is your data kept in plain text files you can open and diff, such as YAML, JSON, Markdown, or CSV? |
-| **Schema** | Is every write checked against a schema you define? |
+| **Schema** | Is every write screened against a schema you define? |
 | **Write API** | Does the tool ship an HTTP service that accepts record changes, so you do not build one? |
 | **No server** | Can it run with nothing always on for you to operate, as a library or a serverless service? |
 | **Free + FOSS** | Can you start at $0 and run it yourself under an open-source license? |
@@ -270,7 +270,7 @@ Choose the other tool when its strength matches your main need.
 | A small private app with one server and an API | PocketBase |
 | Files you validate yourself and no write service | Files with JSON Schema in CI |
 
-YafiDB is a fit when you want records that people and AI agents can read as files, strict checking on every write, a write API you do not build, signed history, and a $0 start with no lock-in. See [prior-art.md](prior-art.md) for related projects and [tradeoffs.md](tradeoffs.md) for the costs.
+YafiDB is a fit when you want records that people and AI agents can read as files, strict screening on every write, a write API you do not build, signed history, and a $0 start with no lock-in. See [prior-art.md](prior-art.md) for related projects and [tradeoffs.md](tradeoffs.md) for the costs.
 
 ## Items not confirmed
 

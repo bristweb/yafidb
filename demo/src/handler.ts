@@ -1,6 +1,6 @@
 // One worker's HTTP surface: two POST endpoints, no reads. Uses only Web standard APIs,
 // so the same handler runs under Bun.serve and as a Cloudflare Worker.
-import { WriteError, type WriterContext } from "./checks.ts";
+import { WriteError, type WriterContext } from "./screens.ts";
 import { appendEntry, createRecord } from "./writer.ts";
 
 const MAX_BODY = 256 * 1024;
@@ -24,7 +24,7 @@ export function createHandler(getCtx: () => Promise<WriterContext> | WriterConte
         : await appendEntry(ctx, { path: body?.path, mode: body?.mode, data: body?.data });
       return json(pathname === "/records" ? 201 : 200, out);
     } catch (e: any) {
-      if (e instanceof WriteError) return json(e.status, { error: e.message, check: e.check });
+      if (e instanceof WriteError) return json(e.status, { error: e.message, screen: e.screen });
       return json(500, { error: "internal error" });
     }
   };

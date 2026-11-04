@@ -1,4 +1,4 @@
-// Enforced checks, in the order the docs list them. Any failure throws WriteError and nothing is written.
+// Enforced screens, in the order the docs list them. Any failure throws WriteError and nothing is written.
 import type { Manifest } from "./manifest.ts";
 import { runPipeline } from "./pipeline.ts";
 import { applyEntry, MODES, verifyFile, type Mode, type VerifyResult } from "./format.ts";
@@ -8,10 +8,10 @@ import { dropNulls, partialSchema, validate } from "./schema.ts";
 import type { Storage } from "./storage.ts";
 import { isPlainObject } from "./util.ts";
 
-export type CheckName = "request" | "authority" | "existing" | "entry" | "relationships" | "plugin" | "write";
+export type ScreenName = "request" | "authority" | "existing" | "entry" | "relationships" | "plugin" | "write";
 
 export class WriteError extends Error {
-  constructor(public check: CheckName, message: string, public status = 422) { super(message); }
+  constructor(public screen: ScreenName, message: string, public status = 422) { super(message); }
 }
 
 export interface PluginInput {
@@ -22,7 +22,7 @@ export interface PluginInput {
   entry: { mode: Mode; data: any };      // the proposed entry
   result: any;                           // the record after the entry is applied
 }
-export interface PluginCheck { name: string; after?: string[]; run(input: PluginInput): Promise<{ pass: boolean; reason?: string }> }
+export interface PluginScreen { name: string; after?: string[]; run(input: PluginInput): Promise<{ pass: boolean; reason?: string }> }
 
 export interface WriterContext {
   storage: Storage;
@@ -33,13 +33,13 @@ export interface WriterContext {
   cwd?: string;                          // where pipeline commands run (Node/Bun only)
   rootDir?: string;                      // local directory of the root, for builds
   getSchema(name: string): Promise<object | null>;
-  plugins: PluginCheck[];                // the manifest's write pipeline, as checks
+  plugins: PluginScreen[];               // the manifest's write pipeline, as screens
   now(): Date;
 }
 
 export interface EntryRequest { mode: Mode; data: any }
 
-export async function enforcedChecks(ctx: WriterContext, path: string, existingText: string, entry: EntryRequest, folderSchema: string) {
+export async function enforcedScreens(ctx: WriterContext, path: string, existingText: string, entry: EntryRequest, folderSchema: string) {
   // 1. Existing file: every signature and chain link verifies.
   const v: VerifyResult = await verifyFile(existingText, ctx.keys);
   if (!v.ok || !v.header) throw new WriteError("existing", `existing file does not verify: ${v.error}`, 409);
@@ -74,7 +74,7 @@ export async function enforcedChecks(ctx: WriterContext, path: string, existingT
     if (err) throw new WriteError("relationships", `${r.pointer || "/"}: ${err}`);
   }
 
-  // 4. Write checks: the manifest's write pipeline. Steps with no dependency run together; any failure rejects.
+  // 4. Write screens: the manifest's write pipeline. Steps with no dependency run together; any failure rejects.
   const input: PluginInput = { path, worker: ctx.worker, schema: v.header.schema, existing: existingText, entry: { mode: entry.mode, data: entry.data }, result };
   const results = await runPipeline(ctx.plugins.map((p) => ({ name: p.name, after: p.after })), async (name) => {
     const out = await ctx.plugins.find((p) => p.name === name)!.run(input);
@@ -82,7 +82,7 @@ export async function enforcedChecks(ctx: WriterContext, path: string, existingT
   }, { failFast: true });
   for (const p of ctx.plugins) {
     const r = results.get(p.name)!;
-    if (r.status === "failed") throw new WriteError("plugin", `check ${p.name} ${r.error!.startsWith("rejected") ? r.error : `errored: ${r.error}`}`, 403);
+    if (r.status === "failed") throw new WriteError("plugin", `screen ${p.name} ${r.error!.startsWith("rejected") ? r.error : `errored: ${r.error}`}`, 403);
   }
   return { verified: v, result };
 }

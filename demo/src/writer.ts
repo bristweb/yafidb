@@ -1,7 +1,7 @@
-// The writer: runs the enforced checks, signs, and appends with a conditional write.
-import { enforcedChecks, WriteError, type EntryRequest, type WriterContext } from "./checks.ts";
+// The writer: runs the enforced screens, signs, and appends with a conditional write.
+import { enforcedScreens, WriteError, type EntryRequest, type WriterContext } from "./screens.ts";
 import { dumpData, entryDataHash, MODES, verifyFile, CURRENT_HEADER, type Mode } from "./format.ts";
-import { checkFile } from "./check.ts";
+import { screenFile } from "./screen.ts";
 import { signJws } from "./jws.ts";
 import { ownerOf } from "./manifest.ts";
 import { assertPath } from "./storage.ts";
@@ -31,7 +31,7 @@ async function headerText(ctx: WriterContext, schema: string) {
 }
 
 async function commit(ctx: WriterContext, path: string, base: string, expected: string | null, entry: EntryRequest, folderSchema: string): Promise<WriteResult> {
-  const { verified } = await enforcedChecks(ctx, path, base, entry, folderSchema);
+  const { verified } = await enforcedScreens(ctx, path, base, entry, folderSchema);
 
   // Sign over the previous signature, then append.
   const { iat, time } = stamp(ctx);
@@ -40,7 +40,7 @@ async function commit(ctx: WriterContext, path: string, base: string, expected: 
   });
   const text = (base.endsWith("\n") ? base : base + "\n") + `---\n${dumpData(entry.data)}yafi: ${entry.mode} ${time} ${jws}\n`;
 
-  // Self-check: the bytes we are about to write must verify and replay to what we validated.
+  // Self-screen: the bytes we are about to write must verify and replay to what we validated.
   const after = await verifyFile(text, ctx.keys);
   if (!after.ok) throw new WriteError("write", `refusing to write: result does not verify (${after.error})`, 500);
 
@@ -51,12 +51,12 @@ async function commit(ctx: WriterContext, path: string, base: string, expected: 
 }
 
 /**
- * The worker always runs the check on a file before writing to it. A file the check had to quarantine refuses the write
- * (409, retry). If another check got there first, the check re-reads, and the write goes on against the file as it is now.
+ * The worker always screens a file before writing to it. A file the screen had to quarantine refuses the write
+ * (409, retry). If another screen got there first, the screen re-reads, and the write goes on against the file as it is now.
  * Returns that file, or null if it no longer exists.
  */
-async function checked(ctx: WriterContext, path: string, f: { body: string; version: string }) {
-  const c = await checkFile(ctx, path, f);
+async function screened(ctx: WriterContext, path: string, f: { body: string; version: string }) {
+  const c = await screenFile(ctx, path, f);
   if (c.status === "quarantined" || c.status === "failed")
     throw new WriteError("existing", `existing file does not verify: ${c.reason}${c.status === "quarantined" ? `; moved to ${c.quarantinePath}, retry` : ` (${c.skipped})`}`, 409);
   return c.status === "ok" ? c.file : null;
@@ -67,7 +67,7 @@ export async function createRecord(ctx: WriterContext, req: { path: string; sche
   if (req.schema !== undefined && req.schema !== schema)
     throw new WriteError("authority", `${req.path} uses ${schema}, not ${req.schema}`, 403);
   const existing = await ctx.storage.get(req.path);
-  if (existing && (await checked(ctx, req.path, existing))) throw new WriteError("write", `${req.path} already exists`, 409);
+  if (existing && (await screened(ctx, req.path, existing))) throw new WriteError("write", `${req.path} already exists`, 409);
   return commit(ctx, req.path, await headerText(ctx, schema), null, { mode: "checkpoint", data: req.data }, schema);
 }
 
@@ -76,7 +76,7 @@ export async function appendEntry(ctx: WriterContext, req: { path: string; mode:
   if (!MODES.includes(req.mode)) throw new WriteError("request", `mode must be one of ${MODES.join(", ")}`, 400);
   const f = await ctx.storage.get(req.path);
   if (!f) throw new WriteError("request", `${req.path} does not exist`, 404);
-  const now = await checked(ctx, req.path, f);
+  const now = await screened(ctx, req.path, f);
   if (!now) throw new WriteError("request", `${req.path} does not exist`, 404);
   return commit(ctx, req.path, now.body, now.version, { mode: req.mode, data: req.data }, schema);
 }

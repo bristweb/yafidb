@@ -1,6 +1,6 @@
 # Saga approach: under consideration for write coordination, not a settled design.
 # ledger/alice/t_881.yaml. Alice's side of transfer t_881, as one record with two entries.
-# Alice's owner checks her balance first. The signatures are placeholders, not real values.
+# Alice's owner screens her balance first. The signatures are placeholders, not real values.
 schema: ledger-entry@1
 yafi: header@1.0.0 2026-03-02T14:00:00Z eyJhbGciOiJFZDI1NTE5In0...Bk2mPd
 ---

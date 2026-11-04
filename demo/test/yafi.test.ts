@@ -1,14 +1,14 @@
-import { checkPath } from "../src/check.ts";
+import { screenPath } from "../src/screen.ts";
 import { describe, expect, test } from "bun:test";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { Database } from "bun:sqlite";
-import { WriteError } from "../src/checks.ts";
+import { WriteError } from "../src/screens.ts";
 import { applyDiff, makeDiff, mergePatch, verifyFile } from "../src/format.ts";
 import { createHandler } from "../src/handler.ts";
 import { build } from "../src/build.ts";
 import { generateKeyPair, importJwks, importSigner } from "../src/jws.ts";
-import { commandCheck } from "../src/plugins.ts";
+import { commandScreen } from "../src/plugins.ts";
 import { appendEntry, createRecord } from "../src/writer.ts";
 import { makeEnv, moved, order, readData, rejects, root, seedAlice, withBuild, writeData } from "./helpers.ts";
 
@@ -62,7 +62,7 @@ describe("happy path", () => {
     expect((await h(new Request("http://w/records"))).status).toBe(405);
     const bad = await post("/entries", { path: "/customer/alice.yaml", mode: "patch", data: { email: 5 } });
     expect(bad.status).toBe(422);
-    expect((await bad.json()).check).toBe("entry");
+    expect((await bad.json()).screen).toBe("entry");
   });
 
   test("build outputs a linked static site and a SQLite cache with reverse references", async () => {
@@ -107,7 +107,7 @@ describe("bad signature", () => {
     const before = await readData(dir, ORDER);
     const e = await rejects(appendEntry(ctx, { path: ORDER, mode: "patch", data: { tracking: "x" } }));
     expect(e).toBeInstanceOf(WriteError);
-    expect(e.check).toBe("existing");
+    expect(e.screen).toBe("existing");
     // the write is refused; the corrupt entry is quarantined, so the file is back to its trusted prefix
     expect(e.message).toContain("/quarantine/");
     expect(await readData(dir, ORDER)).not.toBe(before);
@@ -140,7 +140,7 @@ describe("bad signature", () => {
     const dup = text.replace("status: shipped\n", "status: shipped\nstatus: placed\n");
     expect((await verifyFile(dup, ctx.keys)).error).toContain("bad YAML");
     const e = await rejects(appendEntry(ctx, { path: ORDER, mode: "patch", data: { yafi: "x" } }));
-    expect(e.check).toBe("entry");
+    expect(e.screen).toBe("entry");
   });
 });
 
@@ -159,7 +159,7 @@ describe("broken references", () => {
       `/customer/alice.yaml#${id}/email`,                // field without entry: not supported
     ]) {
       const e = await rejects(create(bad));
-      expect(e.check, bad).toMatch(/relationships|entry/);   // the order schema's pattern may catch some first
+      expect(e.screen, bad).toMatch(/relationships|entry/);   // the order schema's pattern may catch some first
       expect(await Bun.file(join(dir, "root", ORDER)).exists()).toBe(false);
     }
     // a pinned entry and field that do exist resolve
@@ -167,10 +167,10 @@ describe("broken references", () => {
     expect(good.record_id).toHaveLength(22);
   });
 
-  test("the check names `relationships` for a dangling link", async () => {
+  test("the screen names `relationships` for a dangling link", async () => {
     const { ctx } = await makeEnv();
     const e = await rejects(createRecord(ctx, { path: ORDER, schema: "order@1", data: order(`/customer/ghost.yaml#${"A".repeat(22)}`) }));
-    expect(e.check).toBe("relationships");
+    expect(e.screen).toBe("relationships");
   });
 });
 
@@ -186,7 +186,7 @@ describe("conflicting writes", () => {
     const ok = settled.filter((s) => s.status === "fulfilled");
     const lost = settled.filter((s) => s.status === "rejected") as PromiseRejectedResult[];
     expect(ok.length).toBe(1);
-    expect(lost[0].reason.check).toBe("write");
+    expect(lost[0].reason.screen).toBe("write");
     expect(lost[0].reason.status).toBe(409);
     const v = await verifyFile(await readData(dir, ORDER), ctx.keys);
     expect(v.ok && v.entries.length).toBe(2); // checkpoint + the one winner
@@ -202,7 +202,7 @@ describe("conflicting writes", () => {
       return { pass: true };
     } }];
     const e = await rejects(appendEntry(ctx, { path: ORDER, mode: "patch", data: { status: "shipped" } }));
-    expect(e.check).toBe("write");
+    expect(e.screen).toBe("write");
     const v = await verifyFile(await readData(dir, ORDER), ctx.keys);
     expect(v.ok).toBe(true);
     expect(v.state.tracking).toBe("sneaky");
@@ -236,8 +236,8 @@ describe("quarantine", () => {
     await build({ ctx });
     expect(await readData(dir, ORDER)).toBe(goodText + forged);
 
-    // the check tool finds it and quarantines it
-    const results = await checkPath(ctx);
+    // the screen tool finds it and quarantines it
+    const results = await screenPath(ctx);
     expect(moved(results)).toHaveLength(1);
     const q = moved(results)[0].quarantinePath;
     expect(q).toStartWith("/quarantine/");
@@ -259,11 +259,11 @@ describe("quarantine", () => {
 
     // writes resume
     await appendEntry(ctx, { path: ORDER, mode: "patch", data: { status: "delivered" } });
-    // and a second check has nothing left to move
-    expect((await checkPath(ctx)).every((r) => r.status === "ok")).toBe(true);
+    // and a second screen has nothing left to move
+    expect((await screenPath(ctx)).every((r) => r.status === "ok")).toBe(true);
   });
 
-  test("a build reads what it can and checks nothing; the check tool without a signing key moves nothing", async () => {
+  test("a build reads what it can and screens nothing; the screen tool without a signing key moves nothing", async () => {
     const { ctx, dir } = await makeEnv();
     const alice = await seedAlice(ctx);
     await createRecord(ctx, { path: ORDER, schema: "order@1", data: order(alice.ref) });
@@ -275,7 +275,7 @@ describe("quarantine", () => {
     expect(r.records).toBe(2);
     expect(Object.keys(r)).not.toContain("quarantined");
     expect(await readFile(join(out, "order/1042/2026.html"), "utf8")).toContain("MUG-01");   // read as far as it parses
-    const c = await checkPath({ ...ctx, signer: null as any }, ORDER);
+    const c = await screenPath({ ...ctx, signer: null as any }, ORDER);
     expect(c[0]).toMatchObject({ status: "failed", skipped: expect.stringContaining("no signing key") });
     expect(await readData(dir, ORDER)).toBe(text);
   });
@@ -285,7 +285,7 @@ describe("quarantine", () => {
     await seedAlice(ctx);
     const t = (await readData(dir, "customer/alice.yaml")).replace("schema: customer@1", "schema: order@1");
     await writeData(dir, "customer/alice.yaml", t);
-    const m = moved(await checkPath(ctx));
+    const m = moved(await screenPath(ctx));
     expect(m).toHaveLength(1);
     expect((await build({ ctx })).records).toBe(1); // only the quarantine record
     expect(await Bun.file(join(dir, "root/customer/alice.yaml")).exists()).toBe(false);
@@ -296,22 +296,22 @@ describe("quarantine", () => {
   });
 });
 
-describe("write checks", () => {
-  test("a failing check blocks the write; a crashing or hanging check fails closed", async () => {
+describe("write screens", () => {
+  test("a failing screen blocks the write; a crashing or hanging screen fails closed", async () => {
     const { ctx, dir } = await makeEnv();
     const alice = await seedAlice(ctx);
     const e = await rejects(createRecord(ctx, { path: ORDER, schema: "order@1", data: order(alice.ref, { items: [{ sku: "X", qty: 500, price: 1 }] }) }));
-    expect(e.check).toBe("plugin");
+    expect(e.screen).toBe("plugin");
     expect(e.message).toContain("over the limit");
     expect(await Bun.file(join(dir, "root", ORDER)).exists()).toBe(false);
 
-    ctx.plugins = [commandCheck({ name: "crash", command: ["bun", "-e", "process.exit(3)"] }, root)];
-    expect((await rejects(createRecord(ctx, { path: ORDER, schema: "order@1", data: order(alice.ref) }))).check).toBe("plugin");
-    ctx.plugins = [commandCheck({ name: "hang", command: ["bun", "-e", "setTimeout(()=>{},60000)"], timeout_ms: 300 }, root)];
-    expect((await rejects(createRecord(ctx, { path: ORDER, schema: "order@1", data: order(alice.ref) }))).check).toBe("plugin");
+    ctx.plugins = [commandScreen({ name: "crash", command: ["bun", "-e", "process.exit(3)"] }, root)];
+    expect((await rejects(createRecord(ctx, { path: ORDER, schema: "order@1", data: order(alice.ref) }))).screen).toBe("plugin");
+    ctx.plugins = [commandScreen({ name: "hang", command: ["bun", "-e", "setTimeout(()=>{},60000)"], timeout_ms: 300 }, root)];
+    expect((await rejects(createRecord(ctx, { path: ORDER, schema: "order@1", data: order(alice.ref) }))).screen).toBe("plugin");
   });
 
-  test("checks run after Yafi's own, and `after` sets their order", async () => {
+  test("screens run after Yafi's own, and `after` sets their order", async () => {
     const { ctx } = await makeEnv({ plugins: [] });
     const calls: string[] = [];
     ctx.plugins = [
@@ -321,7 +321,7 @@ describe("write checks", () => {
     const alice = await seedAlice({ ...ctx, plugins: [] });
     const e = await rejects(createRecord(ctx, { path: ORDER, schema: "order@1", data: order(alice.ref) }));
     expect(calls).toEqual(["a", "b"]);
-    expect(e.message).toContain("check b");
+    expect(e.message).toContain("screen b");
     calls.length = 0;
     await rejects(createRecord(ctx, { path: ORDER, schema: "order@1", data: { nope: 1 } })); // fails schema first
     expect(calls).toEqual([]);

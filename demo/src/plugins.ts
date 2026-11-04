@@ -1,10 +1,10 @@
 // Pipeline steps in any language: a command (JSON on stdin) or an HTTP endpoint (JSON POST).
-// Write checks answer {"pass": true|false, "reason"?: string}. Neither kind ever receives the database,
+// Write screens answer {"pass": true|false, "reason"?: string}. Neither kind ever receives the database,
 // and neither writes records; only Yafi signs and appends.
-import type { PluginCheck } from "./checks.ts";
+import type { PluginScreen } from "./screens.ts";
 import type { Step } from "./manifest.ts";
 
-export interface CheckConfig { name: string; command?: string[]; url?: string; timeout_ms?: number; after?: string[] }
+export interface ScreenConfig { name: string; command?: string[]; url?: string; timeout_ms?: number; after?: string[] }
 
 export async function callUrl(url: string, input: unknown, timeout_ms = 5000, f: typeof fetch = fetch): Promise<any> {
   const r = await f(url, { method: "POST", headers: { "content-type": "application/json" },
@@ -29,16 +29,16 @@ export async function runCommand(cmd: string[], input: unknown, o: { cwd: string
   } finally { clearTimeout(timer); }
 }
 
-export function urlCheck(c: CheckConfig, f: typeof fetch = fetch): PluginCheck {
+export function urlScreen(c: ScreenConfig, f: typeof fetch = fetch): PluginScreen {
   return { name: c.name, after: c.after, run: (input) => callUrl(c.url!, input, c.timeout_ms, f) };
 }
 
-export function commandCheck(c: CheckConfig, cwd: string): PluginCheck {
+export function commandScreen(c: ScreenConfig, cwd: string): PluginScreen {
   return { name: c.name, after: c.after, run: async (input) => JSON.parse(await runCommand(c.command!, input, { cwd, timeout_ms: c.timeout_ms })) };
 }
 
-/** A write check from a manifest step. */
-export function checkFromStep(s: Step, cwd: string): PluginCheck {
+/** A write screen from a manifest step. */
+export function screenFromStep(s: Step, cwd: string): PluginScreen {
   if (s.builtin) throw new Error(`write step ${s.name} cannot be a builtin`);
-  return s.url ? urlCheck(s as CheckConfig) : commandCheck(s as CheckConfig, cwd);
+  return s.url ? urlScreen(s as ScreenConfig) : commandScreen(s as ScreenConfig, cwd);
 }

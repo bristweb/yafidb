@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { checkPath } from "../src/check.ts";
+import { screenPath } from "../src/screen.ts";
 import { build } from "../src/build.ts";
 import { verifyFile } from "../src/format.ts";
 import { importJwks, importSigner } from "../src/jws.ts";
@@ -136,8 +136,8 @@ pipelines:
   test("duplicate YAML keys and unknown schemas are rejected", async () => {
     expect(problems("workers:\n  a:\n    folders:\n      /x/: order@1\n      /x/: order@1\n")[0]).toContain("bad YAML");
     await expect(rejects(makeEnv({ manifest: BASE_MANIFEST.replace("order@1", "nonexistent@1") }).then(async ({ ctx }) => {
-      const { checkSchemas } = await import("../src/manifest.ts");
-      await checkSchemas(ctx.manifest, ctx.getSchema);
+      const { screenSchemas } = await import("../src/manifest.ts");
+      await screenSchemas(ctx.manifest, ctx.getSchema);
     }))).resolves.toBeInstanceOf(ManifestError);
   });
 
@@ -180,26 +180,26 @@ describe("worker authority", () => {
   test("a worker writes in its own folders, and reads anywhere to validate (references across workers)", async () => {
     const { crm, shop, dir } = await two();
     const alice = await seedAlice(crm);
-    const o = await createRecord(shop, { path: ORDER, data: order(alice.ref) });   // shop reads crm's file to check the link
+    const o = await createRecord(shop, { path: ORDER, data: order(alice.ref) });   // shop reads crm's file to screen the link
     expect(o.record_id).toHaveLength(22);
     expect((await verifyFile(await readData(dir, ORDER), shop.keys)).ok).toBe(true);
     // and a dangling cross-worker link still fails
     const e = await rejects(createRecord(shop, { path: "/order/2.yaml", data: order(`/customer/ghost.yaml#${"A".repeat(22)}`) }));
-    expect(e.check).toBe("relationships");
+    expect(e.screen).toBe("relationships");
   });
 
   test("a write outside the worker's folders is rejected, for create and append, and nothing is written", async () => {
     const { crm, shop, dir } = await two();
     const alice = await seedAlice(crm);
     const e = await rejects(createRecord(shop, { path: "/customer/bob.yaml", data: { name: "Bob", email: "b@x.io" } }));
-    expect(e.check).toBe("authority");
+    expect(e.screen).toBe("authority");
     expect(e.status).toBe(403);
     expect(e.message).toContain("belongs to worker crm, not shop");
     expect(await Bun.file(join(dir, "root/customer/bob.yaml")).exists()).toBe(false);
 
     const before = await readData(dir, "customer/alice.yaml");
     const e2 = await rejects(appendEntry(shop, { path: "/customer/alice.yaml", mode: "patch", data: { name: "Hijacked" } }));
-    expect(e2.check).toBe("authority");
+    expect(e2.screen).toBe("authority");
     expect(await readData(dir, "customer/alice.yaml")).toBe(before);
     // the owner can still write
     await appendEntry(crm, { path: "/customer/alice.yaml", mode: "patch", data: { name: "Alice B" } });
@@ -210,25 +210,25 @@ describe("worker authority", () => {
     const { shop, dir } = await two();
     const before = await readFile(join(dir, "root/yafi.yaml"), "utf8");
     for (const path of ["/yafi.yaml", "/elsewhere/x.yaml", "/quarantine/x.yaml".replace("quarantine", "orders")]) {
-      expect((await rejects(createRecord(shop, { path, data: { a: 1 } }))).check).toBe("authority");
+      expect((await rejects(createRecord(shop, { path, data: { a: 1 } }))).screen).toBe("authority");
     }
-    expect((await rejects(appendEntry(shop, { path: "/yafi.yaml", mode: "patch", data: { a: 1 } }))).check).toBe("authority");
+    expect((await rejects(appendEntry(shop, { path: "/yafi.yaml", mode: "patch", data: { a: 1 } }))).screen).toBe("authority");
     expect(await readFile(join(dir, "root/yafi.yaml"), "utf8")).toBe(before);
     // only the quarantine worker may write /quarantine/
-    expect((await rejects(createRecord(shop, { path: "/quarantine/x.yaml", data: { source: "/a.yaml", reason: "r", removed: "x" } }))).check).toBe("authority");
+    expect((await rejects(createRecord(shop, { path: "/quarantine/x.yaml", data: { source: "/a.yaml", reason: "r", removed: "x" } }))).screen).toBe("authority");
   });
 
   test("the folder fixes the schema: a different schema is refused", async () => {
     const { shop } = await two();
     const e = await rejects(createRecord(shop, { path: "/order/1.yaml", schema: "customer@1", data: { name: "A", email: "a@x.io" } }));
-    expect(e.check).toBe("authority");
+    expect(e.screen).toBe("authority");
     expect(e.message).toContain("uses order@1, not customer@1");
   });
 
   test("an unknown worker name has no authority anywhere", async () => {
     const { ctx } = await two();
     const e = await rejects(createRecord(asWorker(ctx, "ghost"), { path: "/order/1.yaml", data: {} }));
-    expect(e.check).toBe("authority");
+    expect(e.screen).toBe("authority");
   });
 });
 
@@ -279,7 +279,7 @@ describe("pipeline runner", () => {
     await expect(runPipeline([{ name: "a", after: ["a"] }], async () => {})).rejects.toThrow(/cycle/);
   });
 
-  test("write checks without `after` run in parallel, all must pass, and one failure rejects", async () => {
+  test("write screens without `after` run in parallel, all must pass, and one failure rejects", async () => {
     const { ctx } = await makeEnv({ plugins: [] });
     const alice = await seedAlice(ctx);
     const slow = (name: string, pass = true) => ({ name, run: async () => { await sleep(200); return { pass }; } });
@@ -289,11 +289,11 @@ describe("pipeline runner", () => {
     expect(performance.now() - t0).toBeLessThan(500);
     ctx.plugins = [slow("a"), slow("b", false)];
     const e = await rejects(createRecord(ctx, { path: "/order/2.yaml", data: order(alice.ref) }));
-    expect(e.check).toBe("plugin");
-    expect(e.message).toContain("check b rejected");
+    expect(e.screen).toBe("plugin");
+    expect(e.message).toContain("screen b rejected");
   });
 
-  test("a check that follows a failed check never runs", async () => {
+  test("a screen that follows a failed screen never runs", async () => {
     const { ctx } = await makeEnv({ plugins: [] });
     const alice = await seedAlice(ctx);
     const ran: string[] = [];
@@ -302,7 +302,7 @@ describe("pipeline runner", () => {
       { name: "audit", after: ["perm"], run: async () => (ran.push("audit"), { pass: true }) },
     ];
     const e = await rejects(createRecord(ctx, { path: ORDER, data: order(alice.ref) }));
-    expect(e.message).toBe("check perm rejected the write: no");
+    expect(e.message).toBe("screen perm rejected the write: no");
     expect(ran).toEqual(["perm"]);
   });
 });
@@ -425,7 +425,7 @@ describe("build pipeline", () => {
   });
 });
 
-describe("check tool", () => {
+describe("screen tool", () => {
   /** A project directory around the test root, so the standalone command can load it. */
   async function project(env: Awaited<ReturnType<typeof makeEnv>>) {
     const { dir, publicJwk, privateJwk } = env;
@@ -435,11 +435,11 @@ describe("check tool", () => {
     await writeFile(join(dir, "yafidb.yaml"), `storage:\n  type: local\n  dir: root\nschemas: ${join(root, "schemas")}\nkeys:\n  public: keys/public.jwks.json\n  private: keys/private.jwk.json\n`);
   }
   const run = async (dir: string, ...args: string[]) => {
-    const p = Bun.spawn(["bun", "src/check-cli.ts", ...args], { cwd: root, env: { ...process.env, YAFI_PROJECT: dir }, stdout: "pipe", stderr: "pipe" });
+    const p = Bun.spawn(["bun", "src/screen-cli.ts", ...args], { cwd: root, env: { ...process.env, YAFI_PROJECT: dir }, stdout: "pipe", stderr: "pipe" });
     return { out: await new Response(p.stdout).text(), code: await p.exited };
   };
 
-  test("`check` is a standalone command: it quarantines what is wrong and reports it", async () => {
+  test("`screen` is a standalone command: it quarantines what is wrong and reports it", async () => {
     const env = await makeEnv({ manifest: TWO_WORKERS, plugins: [] });
     const { dir, ctx } = env;
     await project(env);
@@ -456,7 +456,7 @@ describe("check tool", () => {
     expect((await run(dir, "/customer/alice.yaml")).out).toContain("1 ok, 0 quarantined");   // one file by path
   });
 
-  test("a build can opt in: the check runs as a step and the others run after it", async () => {
+  test("a build can opt in: the screen runs as a step and the others run after it", async () => {
     const env = await makeEnv({ manifest: TWO_WORKERS, plugins: [] });
     const { dir, ctx } = env;
     await project(env);
@@ -466,19 +466,19 @@ describe("check tool", () => {
     const prev = process.env.YAFI_PROJECT;
     process.env.YAFI_PROJECT = dir;
     withBuild(ctx, [
-      { name: "check", command: ["bun", "src/check-cli.ts", "/"] },
-      { name: "export-json", command: ["bun", "plugins/export-json.ts"], out: join(dir, "json"), after: ["check"] },
+      { name: "screen", command: ["bun", "src/screen-cli.ts", "/"] },
+      { name: "export-json", command: ["bun", "plugins/export-json.ts"], out: join(dir, "json"), after: ["screen"] },
     ]);
     try {
       const r = await build({ ctx });
-      expect(r.steps).toEqual({ check: { status: "ok" }, "export-json": { status: "ok" } });
+      expect(r.steps).toEqual({ screen: { status: "ok" }, "export-json": { status: "ok" } });
     } finally { if (prev === undefined) delete process.env.YAFI_PROJECT; else process.env.YAFI_PROJECT = prev; }
-    expect(await Bun.file(join(dir, "root/order/junk.yaml")).exists()).toBe(false);          // the check quarantined it
+    expect(await Bun.file(join(dir, "root/order/junk.yaml")).exists()).toBe(false);          // the screen quarantined it
     expect(await readdir(join(dir, "root/quarantine"))).toHaveLength(1);
     expect(await Bun.file(join(dir, "json/customer/alice.json")).exists()).toBe(true);
   });
 
-  test("the check fails the step when it cannot quarantine, so later steps are skipped", async () => {
+  test("the screen fails the step when it cannot quarantine, so later steps are skipped", async () => {
     const env = await makeEnv({ manifest: "workers:\n  crm:\n    folders:\n      /customer/: customer@1\n", plugins: [] });
     const { dir, ctx } = env;
     await project(env);
@@ -487,23 +487,23 @@ describe("check tool", () => {
     const prev = process.env.YAFI_PROJECT;
     process.env.YAFI_PROJECT = dir;
     withBuild(ctx, [
-      { name: "check", command: ["bun", "src/check-cli.ts", "/"] },
-      { name: "export-json", command: ["bun", "plugins/export-json.ts"], out: join(dir, "json"), after: ["check"] },
+      { name: "screen", command: ["bun", "src/screen-cli.ts", "/"] },
+      { name: "export-json", command: ["bun", "plugins/export-json.ts"], out: join(dir, "json"), after: ["screen"] },
     ]);
     try {
       const r = await build({ ctx });
-      expect(r.steps.check.status).toBe("failed");
+      expect(r.steps.screen.status).toBe("failed");
       expect(r.steps["export-json"].status).toBe("skipped");
     } finally { if (prev === undefined) delete process.env.YAFI_PROJECT; else process.env.YAFI_PROJECT = prev; }
   });
 
-  test("a worker checks a file before writing, even to create it", async () => {
+  test("a worker screens a file before writing, even to create it", async () => {
     const { dir, ctx } = await makeEnv({ manifest: TWO_WORKERS, plugins: [] });
     const crm = asWorker(ctx, "crm");
     await mkdir(join(dir, "root/customer"), { recursive: true });
     await writeFile(join(dir, "root/customer/alice.yaml"), "name: forged\n");   // not written through the worker
     const e = await rejects(createRecord(crm, { path: "/customer/alice.yaml", data: { name: "Alice", email: "a@x.io" } }));
-    expect(e.check).toBe("existing");
+    expect(e.screen).toBe("existing");
     expect(e.message).toContain("moved to /quarantine/");
     expect((await createRecord(crm, { path: "/customer/alice.yaml", data: { name: "Alice", email: "a@x.io" } })).path).toBe("/customer/alice.yaml");
   });
@@ -516,7 +516,7 @@ describe("quarantine as a worker", () => {
     await createRecord(asWorker(ctx, "shop"), { path: ORDER, data: order(alice.ref) });
     // e.g. a build step that wrote its output into the order folder
     await writeFile(join(dir, "root/order/report.yaml"), "totals:\n  orders: 1\n");
-    const m = moved(await checkPath(ctx));
+    const m = moved(await screenPath(ctx));
     expect(m).toHaveLength(1);
     expect(m[0].path).toBe("/order/report.yaml");
     expect(await Bun.file(join(dir, "root/order/report.yaml")).exists()).toBe(false);   // removed from the original
@@ -525,7 +525,7 @@ describe("quarantine as a worker", () => {
     expect(q.state.removed).toBe("totals:\n  orders: 1\n");
     // the quarantine record was written by the quarantine worker, so only that worker owns it
     expect(ownerOf(ctx.manifest, m[0].quarantinePath)!.worker).toBe("quarantine");
-    expect((await checkPath(ctx)).every((r) => r.status === "ok")).toBe(true);
+    expect((await screenPath(ctx)).every((r) => r.status === "ok")).toBe(true);
   });
 
   test("a file holding another folder's schema is corrupt for its folder", async () => {
@@ -533,18 +533,18 @@ describe("quarantine as a worker", () => {
     await seedAlice(asWorker(ctx, "crm"));
     await mkdir(join(dir, "root/order"), { recursive: true });
     await writeFile(join(dir, "root/order/alice.yaml"), await readData(dir, "customer/alice.yaml")); // a valid file in the wrong folder
-    const m = moved(await checkPath(ctx));
+    const m = moved(await screenPath(ctx));
     expect(m).toHaveLength(1);
     expect(m[0].reason).toContain("does not match folder schema order@1");
     expect(await Bun.file(join(dir, "root/order/alice.yaml")).exists()).toBe(false);
     expect(await Bun.file(join(dir, "root/customer/alice.yaml")).exists()).toBe(true);
   });
 
-  test("files outside every worker folder are not checked, and left alone", async () => {
+  test("files outside every worker folder are not screened, and left alone", async () => {
     const { dir, ctx } = await makeEnv({ manifest: TWO_WORKERS, plugins: [] });
     await mkdir(join(dir, "root/stray"), { recursive: true });
     await writeFile(join(dir, "root/stray/x.yaml"), "a: 1\n");
-    expect((await checkPath(ctx)).filter((r) => r.status === "unowned").map((r) => r.path)).toEqual(["/stray/x.yaml"]);
+    expect((await screenPath(ctx)).filter((r) => r.status === "unowned").map((r) => r.path)).toEqual(["/stray/x.yaml"]);
     expect((await build({ ctx })).records).toBe(0);
     expect(await readData(dir, "stray/x.yaml")).toBe("a: 1\n");
   });
@@ -555,9 +555,9 @@ describe("quarantine as a worker", () => {
     await createRecord(asWorker({ ...ctx, plugins: [] }, "shop"), { path: ORDER, data: order(alice.ref) });
     const text = (await readData(dir, ORDER)) + "---\nstatus: refunded\nyafi: patch 2026-11-01T20:12:09Z a.b.c\n";
     await writeData(dir, ORDER, text);
-    // an admin write check rejects anything going into /quarantine/
+    // an admin write screen rejects anything going into /quarantine/
     ctx.plugins = [{ name: "deny", run: async (i) => ({ pass: !i.path.startsWith("/quarantine/") }) }];
-    const r = await checkPath(ctx);
+    const r = await screenPath(ctx);
     expect(r.find((x) => x.status === "failed")).toMatchObject({ skipped: expect.stringContaining("quarantine write failed") });
     expect(await readData(dir, ORDER)).toBe(text);                                           // untouched
     expect(await readdir(join(dir, "root")).then((x) => x.includes("quarantine"))).toBe(false); // nothing half-written
@@ -568,7 +568,7 @@ describe("quarantine as a worker", () => {
     await seedAlice(ctx);
     const text = (await readData(dir, "customer/alice.yaml")) + "---\ngarbage: 1\n";
     await writeData(dir, "customer/alice.yaml", text);
-    const r = await checkPath(ctx);
+    const r = await screenPath(ctx);
     expect(r[0]).toMatchObject({ status: "failed", skipped: expect.stringContaining("no quarantine worker") });
     expect(await readData(dir, "customer/alice.yaml")).toBe(text);
     expect((await build({ ctx })).records).toBe(1);   // the build reads it anyway
@@ -584,7 +584,7 @@ describe("quarantine as a worker", () => {
       { name: "alert", command: ["bun", "-e", `const i = await Bun.stdin.json(); i.originalTailGone = !(await Bun.file(${JSON.stringify(join(dir, "root/customer/alice.yaml"))}).text()).includes("garbage"); await Bun.write(${JSON.stringify(alert)}, JSON.stringify(i))`] },
       { name: "second", command: ["bun", "-e", "process.exit(1)"], after: ["alert"] },
     ] } };
-    const m = moved(await checkPath(ctx));
+    const m = moved(await screenPath(ctx));
     const info = JSON.parse(await readFile(alert, "utf8"));
     expect(info).toMatchObject({ source: "/customer/alice.yaml", whole: false, originalTailGone: true });
     expect(info.quarantine_path).toBe(m[0].quarantinePath);
@@ -622,7 +622,7 @@ describe("header version", () => {
   });
 
   test("a supported version still needs a signature that covers it", async () => {
-    // Listing a second version is a decision of the checking tool; the signed mode must equal the line's mode.
+    // Listing a second version is a decision of the screening tool; the signed mode must equal the line's mode.
     const { ctx, dir } = await makeEnv();
     await seedAlice(ctx);
     const fmt = await import("../src/format.ts");
@@ -641,7 +641,7 @@ describe("header version", () => {
     const newer = withVersion(await readData(dir, "customer/alice.yaml"), "header@2.0.0");
     await writeData(dir, "customer/alice.yaml", newer);
     const e = await rejects(appendEntry(ctx, { path: "/customer/alice.yaml", mode: "patch", data: { name: "B" } }));
-    expect(e.check).toBe("existing");
+    expect(e.screen).toBe("existing");
     expect(e.message).toContain("unsupported header version header@2.0.0");
     expect(e.message).toContain("moved to /quarantine/");
     expect(await Bun.file(join(dir, "root/customer/alice.yaml")).exists()).toBe(false);
@@ -649,7 +649,7 @@ describe("header version", () => {
     expect((await verifyFile(await readData(dir, qp.slice(1)), ctx.keys)).state.removed).toBe(newer);
   });
 
-  test("a build reads without checking: it does not look at versions or signatures", async () => {
+  test("a build reads without screening: it does not look at versions or signatures", async () => {
     const { ctx, dir } = await makeEnv();
     await seedAlice(ctx);
     const out = join(dir, "json");

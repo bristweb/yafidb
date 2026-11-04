@@ -368,7 +368,7 @@ Each formula sits on its own schema, next to the fields it uses. Opening a schem
 Derived values go in an `x-computed` keyword. Optional cross-field rules go in `x-validate`.
 
 ```yaml
-# examples/schemas/contribution.schema.yaml (abridged)
+# examples/schemas/contribution.yaml (abridged)
 $id: contribution
 type: object
 properties:
@@ -386,7 +386,7 @@ x-validate:
     message: "Time contributions need hours and hourly_rate."
 ```
 
-See the [full sample schema](../examples/schemas/contribution.schema.yaml).
+See the [full sample schema](../examples/schemas/contribution.yaml).
 
 ### Related records stay pure CEL
 
@@ -397,7 +397,7 @@ size(contributions) == 0 ? 0.0
   : sum(contributions.map(c, c.slices)) / sum(all_contributions.map(c, c.slices)) * 100.0
 ```
 
-CEL has no built-in `sum` over a list. The engine registers one small standard extension for it, the same way in every runtime. That keeps the formulas themselves in plain CEL. The sample is [member.schema.yaml](../examples/schemas/member.schema.yaml).
+CEL has no built-in `sum` over a list. The engine registers one small standard extension for it, the same way in every runtime. That keeps the formulas themselves in plain CEL. The sample is [member.yaml](../examples/schemas/member.yaml).
 
 ### Why CEL is safe to run
 

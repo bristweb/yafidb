@@ -4,12 +4,12 @@ Sample record files and schemas that show the shapes described in [docs/design.m
 
 | File | Shows |
 | --- | --- |
-| [chains/member-alice-2026.yaml](chains/member-alice-2026.yaml) | A header, a checkpoint, and a patch, each signed over the one before |
-| [chains/saga-transfer-alice.yaml](chains/saga-transfer-alice.yaml) and [chains/saga-transfer-bob.yaml](chains/saga-transfer-bob.yaml) | Two sides of one saga, each a record with its own entries, tied by transaction ID `t_881` |
-| [chains/genesis-after-migration.yaml](chains/genesis-after-migration.yaml) | A genesis file that starts after a schema migration and names the last signature of the old file |
-| [chains/freeform-markdown.yaml](chains/freeform-markdown.yaml) | Markdown, JSON, YAML, and code inside `|` blocks with no escaping |
-| [schemas/contribution.schema.yaml](schemas/contribution.schema.yaml) | A schema: JSON Schema fields, CEL `x-computed` values, and `x-validate` rules |
-| [schemas/member.schema.yaml](schemas/member.schema.yaml) | A schema that uses related records as CEL variables |
+| [chains/member.yaml](chains/member.yaml) | A header, a checkpoint, and a patch, each signed over the one before |
+| [chains/saga-alice.yaml](chains/saga-alice.yaml) and [chains/saga-bob.yaml](chains/saga-bob.yaml) | Two sides of one saga, each a record with its own entries, tied by transaction ID `t_881` |
+| [chains/migration.yaml](chains/migration.yaml) | A migration file that starts after a schema migration and names the last signature of the old file |
+| [chains/note.yaml](chains/note.yaml) | Markdown, JSON, YAML, and code inside `|` blocks with no escaping |
+| [schemas/contribution.yaml](schemas/contribution.yaml) | A schema: JSON Schema fields, CEL `x-computed` values, and `x-validate` rules |
+| [schemas/member.yaml](schemas/member.yaml) | A schema that uses related records as CEL variables |
 
 Schemas are JSON Schema, written here in YAML for readability. The same content in a `.json` file is equally valid.
 
@@ -19,6 +19,6 @@ Sample `yafidb.yaml` deployment settings for each template, plus one custom mix.
 
 | File | Shows |
 | --- | --- |
-| [config/yafidb.s3-yaml-none.yaml](config/yafidb.s3-yaml-none.yaml) | Template `s3+yaml+none`: files in an S3-compatible bucket, no derived output |
-| [config/yafidb.s3-yaml-sqlite.yaml](config/yafidb.s3-yaml-sqlite.yaml) | Template `s3+yaml+sqlite`: files in a bucket, built to SQLite |
-| [config/yafidb.custom-mix.yaml](config/yafidb.custom-mix.yaml) | A custom mix with a signed manifest required |
+| [config/s3-yaml-none.yaml](config/s3-yaml-none.yaml) | Template `s3+yaml+none`: files in an S3-compatible bucket, no derived output |
+| [config/s3-yaml-sqlite.yaml](config/s3-yaml-sqlite.yaml) | Template `s3+yaml+sqlite`: files in a bucket, built to SQLite |
+| [config/custom-mix.yaml](config/custom-mix.yaml) | A custom mix with a signed manifest required |

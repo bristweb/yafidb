@@ -1,6 +1,8 @@
 # The first file after a schema migration. It names the old file and the last signature in it,
-# so history is linked, not rewritten. The signatures are placeholders, not real values.
-schema: genesis@1
+# so history is linked, not rewritten. Its own schema is migration@1, not contribution@2:
+# it describes the move between schemas rather than being a contribution.
+# The signatures are placeholders, not real values.
+schema: migration@1
 yafi: header@1.0.0 2027-01-01T00:00:00Z eyJhbGciOiJFZDI1NTE5In0...Gk6uXj
 ---
 migrated_from:

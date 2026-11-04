@@ -3,10 +3,10 @@
 import { readFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import YAML from "yaml";
-import type { WriterContext } from "./checks.ts";
+import type { WriterContext } from "./screens.ts";
 import { importJwks, importSigner } from "./jws.ts";
 import { loadManifest, ManifestError } from "./manifest.ts";
-import { checkFromStep } from "./plugins.ts";
+import { screenFromStep } from "./plugins.ts";
 import { LocalStorage } from "./storage-local.ts";
 
 export interface Config {
@@ -46,7 +46,7 @@ export async function loadContext(project: string, o: { worker?: string; needSig
   if (o.worker && !manifest.workers[o.worker]) throw new ManifestError([`worker ${o.worker} is not in the manifest`]);
   return {
     config: cfg, hasSigner: !!signer, keys, signer, manifest, worker: o.worker ?? "", cwd: project, rootDir, storage, getSchema,
-    plugins: manifest.pipelines.write.map((s) => checkFromStep(s, project)),
+    plugins: manifest.pipelines.write.map((s) => screenFromStep(s, project)),
     now: o.now ?? (() => new Date()),
   };
 }

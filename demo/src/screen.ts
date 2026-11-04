@@ -1,27 +1,27 @@
-// The check tool: verifies a file as its owning worker's folder requires, and quarantines what is wrong.
-// It is standalone (`bun run check [path]`). A worker always runs it on a file before writing; an admin can add it
+// The screen tool: verifies a file as its owning worker's folder requires, and quarantines what is wrong.
+// It is standalone (`bun run screen [path]`). A worker always runs it on a file before writing; an admin can add it
 // to a build as an opt-in step. Anything that runs it automatically quarantines what is wrong, through the
 // quarantine worker. Builds and reads do not run it by default.
 //
-// What it checks: the header's version is one this tool supports, every signature and chain link verifies, and the
+// What it screens: the header's version is one this tool supports, every signature and chain link verifies, and the
 // header's schema is the schema of the file's folder.
-import type { WriterContext } from "./checks.ts";
+import type { WriterContext } from "./screens.ts";
 import { verifyFile } from "./format.ts";
 import { listRecords, ownerOf } from "./manifest.ts";
 import { quarantineFile } from "./quarantine.ts";
 
-export type CheckResult =
+export type ScreenResult =
   | { path: string; status: "ok"; file: { body: string; version: string } }   // the file as last read, which verified
   | { path: string; status: "unowned" | "missing" }
   | { path: string; status: "quarantined"; reason: string; quarantinePath: string; followUps: Record<string, string> }
   | { path: string; status: "failed"; reason: string; skipped: string };   // wrong, and could not be quarantined
 
 /**
- * Checks one file. Pass `file` if it was just read, so the check sees exactly what the caller sees.
- * If a newer write beat the overwrite of a partly bad file, nothing was changed: it is read again and checked afresh,
+ * Screens one file. Pass `file` if it was just read, so the screen sees exactly what the caller sees.
+ * If a newer write beat the overwrite of a partly bad file, nothing was changed: it is read again and screened afresh,
  * so the result always describes the file as it is now.
  */
-export async function checkFile(ctx: WriterContext, path: string, file?: { body: string; version: string } | null): Promise<CheckResult> {
+export async function screenFile(ctx: WriterContext, path: string, file?: { body: string; version: string } | null): Promise<ScreenResult> {
   const owner = ownerOf(ctx.manifest, path);
   if (!owner) return { path, status: "unowned" };
   for (let attempt = 0; ; attempt++) {
@@ -43,10 +43,10 @@ export async function checkFile(ctx: WriterContext, path: string, file?: { body:
   }
 }
 
-/** Checks every record file under a folder (or one file). */
-export async function checkPath(ctx: WriterContext, path = "/"): Promise<CheckResult[]> {
+/** Screens every record file under a folder (or one file). */
+export async function screenPath(ctx: WriterContext, path = "/"): Promise<ScreenResult[]> {
   const files = path.endsWith("/") ? (await listRecords(ctx.storage)).filter((p) => p.startsWith(path)) : [path];
-  const out: CheckResult[] = [];
-  for (const p of files) out.push(await checkFile(ctx, p));
+  const out: ScreenResult[] = [];
+  for (const p of files) out.push(await screenFile(ctx, p));
   return out;
 }

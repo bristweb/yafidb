@@ -1,13 +1,13 @@
 // Cloudflare Worker entry (sketch): one deployed Worker is one YafiDB worker. It acts as YAFI_WORKER, reads the
 // manifest from /yafi.yaml in the bucket, and writes only inside that worker's folders.
-// Write checks from the manifest must be `url` steps here, because Workers cannot spawn commands.
+// Write screens from the manifest must be `url` steps here, because Workers cannot spawn commands.
 //   bindings: BUCKET (R2), YAFI_WORKER, YAFI_PRIVATE_JWK (secret), YAFI_JWKS, YAFI_SCHEMAS (JSON name->schema),
 //             YAFI_REQUIRE_SIGNED_MANIFEST ("1", optional), YAFI_TOKEN (secret, optional)
-import type { WriterContext } from "./checks.ts";
+import type { WriterContext } from "./screens.ts";
 import { createHandler } from "./handler.ts";
 import { importJwks, importSigner } from "./jws.ts";
 import { loadManifest, ManifestError } from "./manifest.ts";
-import { checkFromStep } from "./plugins.ts";
+import { screenFromStep } from "./plugins.ts";
 import { R2Storage, type R2BucketLike } from "./storage.ts";
 
 export interface Env {
@@ -25,7 +25,7 @@ export async function contextFromEnv(env: Env): Promise<WriterContext> {
   return {
     storage, keys, manifest, worker: env.YAFI_WORKER, getSchema,
     signer: await importSigner(JSON.parse(env.YAFI_PRIVATE_JWK)),
-    plugins: manifest.pipelines.write.map((s) => checkFromStep(s, ".")),
+    plugins: manifest.pipelines.write.map((s) => screenFromStep(s, ".")),
     now: () => new Date(),
   };
 }

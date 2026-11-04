@@ -1,10 +1,10 @@
 // Build: an optional pass. Given a path, find the folders under it (from the manifest), read the files there, and run
-// the build pipeline. A build does no validation and no quarantine. A build that wants checked data adds the check tool
-// as a step (`command: [bun, src/check-cli.ts, /order/]`) and makes the other steps run `after` it.
+// the build pipeline. A build does no validation and no quarantine. A build that wants screened data adds the screen tool
+// as a step (`command: [bun, src/screen-cli.ts, /order/]`) and makes the other steps run `after` it.
 // Files stay the source of truth; build steps only read them and write elsewhere.
 import { mkdir, rm, writeFile } from "node:fs/promises";
 import { dirname, isAbsolute, join, resolve } from "node:path";
-import type { WriterContext } from "./checks.ts";
+import type { WriterContext } from "./screens.ts";
 import { parseFile, type VerifyResult } from "./format.ts";
 import { foldersUnder, listRecords, ownerOf, type Owner, type Step } from "./manifest.ts";
 import { runPipeline } from "./pipeline.ts";
@@ -19,7 +19,7 @@ export interface BuildReport {
   steps: Record<string, { status: "ok" | "failed" | "skipped"; error?: string }>;
 }
 
-/** What a built-in step sees: the records as read (nothing is checked). Command and URL steps never see this. */
+/** What a built-in step sees: the records as read (nothing is screened). Command and URL steps never see this. */
 interface Built { records: BuiltRecord[]; out: string }
 const BUILTINS: Record<string, (b: Built) => Promise<void>> = {
   "static-site": async ({ records, out }) => {

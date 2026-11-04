@@ -1,12 +1,12 @@
-import type { CheckResult } from "../src/check.ts";
+import type { ScreenResult } from "../src/screen.ts";
 import { mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import type { PluginCheck, WriterContext } from "../src/checks.ts";
+import type { PluginScreen, WriterContext } from "../src/screens.ts";
 import { generateKeyPair, importJwks, importSigner } from "../src/jws.ts";
 import { parseManifest, MANIFEST_PATH, type Manifest, type Step } from "../src/manifest.ts";
 import { schemaLoader } from "../src/node-context.ts";
-import { commandCheck } from "../src/plugins.ts";
+import { commandScreen } from "../src/plugins.ts";
 import { LocalStorage } from "../src/storage-local.ts";
 import { createRecord } from "../src/writer.ts";
 
@@ -26,7 +26,7 @@ workers:
 /** Replaces the manifest's build pipeline. */
 export const withBuild = (ctx: WriterContext, build: Step[]): Manifest => (ctx.manifest = { ...ctx.manifest, pipelines: { ...ctx.manifest.pipelines, build } });
 
-export async function makeEnv(opts: { plugins?: PluginCheck[]; manifest?: string; worker?: string } = {}) {
+export async function makeEnv(opts: { plugins?: PluginScreen[]; manifest?: string; worker?: string } = {}) {
   const dir = await mkdtemp(join(tmpdir(), "yafi-"));
   const { privateJwk, publicJwk } = await generateKeyPair("test-writer");
   let tick = Date.parse("2026-11-02T12:00:00Z");
@@ -38,7 +38,7 @@ export async function makeEnv(opts: { plugins?: PluginCheck[]; manifest?: string
     keys: await importJwks({ keys: [publicJwk] }),
     signer: await importSigner(privateJwk),
     getSchema: schemaLoader(join(root, "schemas")),
-    plugins: opts.plugins ?? [commandCheck({ name: "limit-qty", command: ["bun", "plugins/limit-qty.ts"] }, root)],
+    plugins: opts.plugins ?? [commandScreen({ name: "limit-qty", command: ["bun", "plugins/limit-qty.ts"] }, root)],
     now: () => new Date((tick += 1000)),
   };
   return { dir, ctx, privateJwk, publicJwk };
@@ -53,8 +53,8 @@ export async function seedAlice(ctx: WriterContext) {
   return { ...a, ref: `/customer/alice.yaml#${a.record_id}` };
 }
 
-/** The files a check run moved to quarantine. */
-export const moved = (rs: CheckResult[]) => rs.filter((r): r is Extract<CheckResult, { status: "quarantined" }> => r.status === "quarantined");
+/** The files a screen run moved to quarantine. */
+export const moved = (rs: ScreenResult[]) => rs.filter((r): r is Extract<ScreenResult, { status: "quarantined" }> => r.status === "quarantined");
 
 export const readData = async (dir: string, p: string) => readFile(join(dir, "root", p), "utf8");
 export const writeData = async (dir: string, p: string, s: string) => writeFile(join(dir, "root", p), s);

@@ -8,7 +8,7 @@ You store your records as YafiDB files. Build steps turn those files into a comp
 
 Visitors only ever load static files, so the site is fast and cheap to host. Changes can come in one of two ways:
 
-- **Git only.** Records are YAML files in a Git repository. You create and edit them with a local YafiDB tool, which checks each record against its schema. The check tool runs as a test in the repository, so a bad record fails it. The Git host, such as GitHub or GitLab, builds and publishes the site on each push. No write API runs, so there is no write surface beyond the Git host. This suits sites that change rarely, because each change is a commit. Git history shows who changed what. Authorship is verified only when commits are signed.
+- **Git only.** Records are YAML files in a Git repository. You create and edit them with a local YafiDB tool, which screens each record against its schema. The screen tool runs as a test in the repository, so a bad record fails it. The Git host, such as GitHub or GitLab, builds and publishes the site on each push. No write API runs, so there is no write surface beyond the Git host. This suits sites that change rarely, because each change is a commit. Git history shows who changed what. Authorship is verified only when commits are signed.
 - **Optional workers.** A minimal write API, run as a few small workers, accepts changes such as form submissions. Each writer validates the record, signs it, and adds it to storage. The site is then rebuilt and redeployed. Writers handle only writes, and visitors never reach them.
 
 ## How the pieces fit
@@ -36,7 +36,7 @@ All values here are illustrative.
 
 1. **The records live as files.** Each recipe is a record in a YAML file in object storage.
 2. **A visitor loads the site.** They get plain pages from the static host. No writer runs.
-3. **Someone adds a recipe.** A request goes to a writer, which checks the recipe against its schema, signs it, and adds it to the file. This is the only time a writer is involved.
+3. **Someone adds a recipe.** A request goes to a writer, which screens the recipe against its schema, signs it, and adds it to the file. This is the only time a writer is involved.
 4. **The build runs.** It reads the changed files and regenerates the site, including the new recipe's page and the updated index.
 5. **The build publishes the generated site.** CI deploys it, or YafiDB commits it to a publish repository.
 6. **The static host publishes the new site.** Visitors see the new recipe.

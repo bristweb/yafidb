@@ -1,11 +1,11 @@
-// `bun run check [path]`: the check tool. Verifies the files under a folder (default /), or one file, and quarantines
+// `bun run screen [path]`: the screen tool. Verifies the files under a folder (default /), or one file, and quarantines
 // what is wrong through the quarantine worker. Exit 1 only if something wrong could not be quarantined.
-import { checkPath } from "./check.ts";
+import { screenPath } from "./screen.ts";
 import { loadContext } from "./node-context.ts";
 
 const project = process.env.YAFI_PROJECT ?? new URL("..", import.meta.url).pathname;
 const ctx = await loadContext(project);
-const results = await checkPath(ctx, process.argv[2] ?? "/");
+const results = await screenPath(ctx, process.argv[2] ?? "/");
 
 for (const r of results) {
   if (r.status === "quarantined") console.log(`QUARANTINE ${r.path}: ${r.reason} -> ${r.quarantinePath}`);
@@ -13,5 +13,5 @@ for (const r of results) {
   else if (r.status === "unowned") console.log(`UNOWNED ${r.path}: not inside any worker folder, left alone`);
 }
 const count = (s: string) => results.filter((r) => r.status === s).length;
-console.log(`check ${process.argv[2] ?? "/"}: ${count("ok")} ok, ${count("quarantined")} quarantined, ${count("failed")} failed, ${count("unowned")} unowned`);
+console.log(`screen ${process.argv[2] ?? "/"}: ${count("ok")} ok, ${count("quarantined")} quarantined, ${count("failed")} failed, ${count("unowned")} unowned`);
 if (count("failed")) process.exit(1);

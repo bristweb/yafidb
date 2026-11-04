@@ -30,8 +30,8 @@ This log records each decision, the alternatives that were considered and reject
 | 22 | Signature format | Compact JOSE (RFC 7515) with Ed25519 (`alg` `Ed25519`, RFC 9864) | Invented signature fields, plain SHA-256 |
 | 23 | Write coordination | Open, not configurable. Sagas proposed, owners under consideration | Central worker, 2PC |
 | 24 | Root, workers, and pipelines | One manifest grants folder authority and defines pipelines. Builds are optional | Builds required, shared write folders, per-hook configuration |
-| 25 | Format version and header | The version rides on the header mode (`header@1.0.0`), matched exactly against the check tool's list. The header holds only `schema` | A `yafi_schema` field, a separate `record_schema` field, version ranges |
-| 26 | The check tool | Validation and quarantine live in one standalone check tool. Problem data is logged to quarantine first, then the original is overwritten (partial) or a delete is attempted (whole). A worker always runs it before writing. Builds do no validation, and may opt in | Builds that validate or quarantine, a general reader role, skipping files with unknown versions |
+| 25 | Format version and header | The version rides on the header mode (`header@1.0.0`), matched exactly against the screen tool's list. The header holds only `schema` | A `yafi_schema` field, a separate `record_schema` field, version ranges |
+| 26 | The screen tool | Validation and quarantine live in one standalone screen tool. Problem data is logged to quarantine first, then the original is overwritten (partial) or a delete is attempted (whole). A worker always runs it before writing. Builds do no validation, and may opt in | Builds that validate or quarantine, a general reader role, skipping files with unknown versions |
 
 ## 1. Storage backend: any object storage
 
@@ -140,7 +140,7 @@ This log records each decision, the alternatives that were considered and reject
 
 ## 14. The record format is versioned on the header, and YAML is the first format
 
-**Chosen:** all records are YAML today. The format version rides on each file's header, as `header@1.0.0` (see decision 25). The check tool keeps a list of the versions it supports. Another format can be added later by adding a version to the list, and a file never changes version, so switching a data type to a new format starts new files, the same pattern as a schema migration (decision 11).
+**Chosen:** all records are YAML today. The format version rides on each file's header, as `header@1.0.0` (see decision 25). The screen tool keeps a list of the versions it supports. Another format can be added later by adding a version to the list, and a file never changes version, so switching a data type to a new format starts new files, the same pattern as a schema migration (decision 11).
 
 **Rejected:** hard-wiring YAML into every part of the system. A format keyword in each schema (`x-format`), which an earlier version of this decision chose, because the header already carries the version and the signature covers it.
 
@@ -187,7 +187,7 @@ Write coordination is not configurable. It is an open decision (see decision 23)
 
 **Chosen:** a key use is a static website, built from the records by build steps. The default shape is a static site with optional workers. Most of the site is static files that any web host can serve. A minimal write API, run as a few small workers, accepts changes such as form submissions. Each one validates the record, signs it, and writes it to storage. The site is then rebuilt and redeployed. Visitors never reach the workers.
 
-Git-only publishing is adopted for sites that change rarely. The records are YAML files in a Git repository. The author creates and edits them with a local YafiDB tool, which checks each record against its schema. A build runs as a test in the repository, so a bad record fails it. The Git host (GitHub, GitLab, or similar) builds and publishes the site on each push. No write API runs.
+Git-only publishing is adopted for sites that change rarely. The records are YAML files in a Git repository. The author creates and edits them with a local YafiDB tool, which screens each record against its schema. A build runs as a test in the repository, so a bad record fails it. The Git host (GitHub, GitLab, or similar) builds and publishes the site on each push. No write API runs.
 
 The build can run in CI, or YafiDB can commit the generated site to a publish repository. See [Static site](static-site.md).
 
@@ -219,7 +219,7 @@ The build can run in CI, or YafiDB can commit the generated site to a publish re
 
 ## 21. The name `yafi` is reserved for Yafi
 
-**Chosen:** an entry's user fields sit at the top level, as the schema defines them. Yafi's own data lives on the entry's `yafi:` line (mode, time, signature), so a user field cannot be named `yafi`. The writer and the check tool reject that field and reject duplicate keys. A record is identified by its id, the first 22 characters of its header signature, and a file's path.
+**Chosen:** an entry's user fields sit at the top level, as the schema defines them. Yafi's own data lives on the entry's `yafi:` line (mode, time, signature), so a user field cannot be named `yafi`. The writer and the screen tool reject that field and reject duplicate keys. A record is identified by its id, the first 22 characters of its header signature, and a file's path.
 
 **Rejected:** a `data:` wrapper around user fields, and a separate `id` field.
 
@@ -243,34 +243,34 @@ The build can run in CI, or YafiDB can commit the generated site to a publish re
 
 ## 24. Root, workers, and pipelines
 
-**Chosen:** one manifest, `/yafi.yaml`, is the single source of truth for authority. It lists workers, the folders each owns, one schema per folder, and the pipelines. A worker writes only in its own folders and may read anywhere. No folder is shared between workers, and no worker folder nests inside another's. Write checks and build steps are steps in a pipeline: any language, with `after` dependencies, and independent steps run in parallel. Steps receive paths or a pass/fail question, never the database. A build is optional, and the shipped builds (relationship cache, static site) are ordinary steps that an admin can remove or replace. Corrupt data is written to quarantine by the write checks, and is removed from the original only after that write succeeds. Signing the manifest is optional.
+**Chosen:** one manifest, `/yafi.yaml`, is the single source of truth for authority. It lists workers, the folders each owns, one schema per folder, and the pipelines. A worker writes only in its own folders and may read anywhere. No folder is shared between workers, and no worker folder nests inside another's. Write screens and build steps are steps in a pipeline: any language, with `after` dependencies, and independent steps run in parallel. Steps receive paths or a pass/fail question, never the database. A build is optional, and the shipped builds (relationship cache, static site) are ordinary steps that an admin can remove or replace. Corrupt data is written to quarantine by the write screens, and is removed from the original only after that write succeeds. Signing the manifest is optional.
 
 **Rejected:** a build that is required. Several workers sharing write authority over one folder. Several schemas in one folder. Passing the database to hooks. A fixed list of hook points. Builds writing into worker folders: anything there that did not come through its worker is corrupt and goes to quarantine.
 
-**Why:** one writer per folder keeps the signature chain and conditional write simple, and one manifest makes authority checkable in one place. A pipeline of independent steps covers permissions, format conversion, and publishing with one mechanism, and keeps the YAML the only source of truth.
+**Why:** one writer per folder keeps the signature chain and conditional write simple, and one manifest makes authority verifiable in one place. A pipeline of independent steps covers permissions, format conversion, and publishing with one mechanism, and keeps the YAML the only source of truth.
 
 ## 25. Format version rides on the header mode
 
-**Chosen:** the header line is `yafi: header@1.0.0 <time> <JWS>`, with the same shape as every entry. The header's one data field is `schema`, which replaces `record_schema`, and the `yafi_schema` field is dropped. The signed claims are the versioned mode, `iat`, `nonce`, and `schema`. The check tool keeps a list of versions it supports and matches the full version text exactly. Any string is allowed (semver, beta, stable). A file with an unlisted version is corrupt to the tool, like any other file it cannot verify (decision 26).
+**Chosen:** the header line is `yafi: header@1.0.0 <time> <JWS>`, with the same shape as every entry. The header's one data field is `schema`, which replaces `record_schema`, and the `yafi_schema` field is dropped. The signed claims are the versioned mode, `iat`, `nonce`, and `schema`. The screen tool keeps a list of versions it supports and matches the full version text exactly. Any string is allowed (semver, beta, stable). A file with an unlisted version is corrupt to the tool, like any other file it cannot verify (decision 26).
 
 **Rejected:** a separate version field, which gives the header an extra shape. Version ranges or ordering, which require every version to follow one scheme.
 
 **Why:** the signature already covers the mode, so the version is signed with no extra field. Exact matching keeps behaviour simple and predictable.
 
-## 26. The check tool
+## 26. The screen tool
 
-**Chosen:** the enforced checks (version, signatures and chain, folder schema) and quarantine form one standalone tool, the check tool, which can run alone as a command. Anything that runs it automatically quarantines what is wrong. The rule is the same for a file that is partly or wholly bad: the problem data is logged to quarantine first, and only after that succeeds is the original overwritten (partial) or a delete attempted (whole). A worker always runs it on a file before writing. A build does no validation or quarantine and only reads files and runs steps. An admin may add the check tool to a build as an ordinary opt-in step, and put the steps that need checked data `after` it. The shipped build steps read files as they are.
+**Chosen:** the enforced screens (version, signatures and chain, folder schema) and quarantine form one standalone tool, the screen tool, which can run alone as a command. Anything that runs it automatically quarantines what is wrong. The rule is the same for a file that is partly or wholly bad: the problem data is logged to quarantine first, and only after that succeeds is the original overwritten (partial) or a delete attempted (whole). A worker always runs it on a file before writing. A build does no validation or quarantine and only reads files and runs steps. An admin may add the screen tool to a build as an ordinary opt-in step, and put the steps that need screened data `after` it. The shipped build steps read files as they are.
 
 **Rejected:** a general reader role that validates or quarantines. Builds that verify or quarantine by default. A build-side report of problems. Skipping a file with an unknown version, which would leave an unusable file in a worker folder instead of recovering it.
 
-**Why:** records are often converted and published, so the only things that read the YAML may be a worker or a build. Putting all validation in one tool keeps one place to trust, and keeps builds simple. Whoever wants checked data asks the tool for it, and the same quarantine rules apply however it is run.
+**Why:** records are often converted and published, so the only things that read the YAML may be a worker or a build. Putting all validation in one tool keeps one place to trust, and keeps builds simple. Whoever wants screened data asks the tool for it, and the same quarantine rules apply however it is run.
 
 ## Open questions
 
 - **Git as a storage backend.** Git was once a supported backend for small projects, because it is free, keeps a commit log, and could even host the engine that runs it. It is now under reconsideration, beyond Git-only sites. The concerns are that git is slow for writes, that GitHub has outages, and that concurrent pushes conflict. Each backend also adds complexity to support. Object storage may be enough on its own. Until this is settled, the default is any object storage, and Git is used for Git-only sites.
 - **Write coordination (decision 23).** Sagas are the proposed direction, and owners are one option under consideration. Whether either is chosen is open.
 - **Write queue (decision 8).** The writer appends to files directly. Whether a write queue is still needed is open.
-- **Linking to a field of the current state (`#id//field`).** A link with no entry id is undecided, and the current checks reject it.
+- **Linking to a field of the current state (`#id//field`).** A link with no entry id is undecided, and the current screens reject it.
 - **Rollover and record id.** A file is one record with one id, so a rollover to a new file raises how the new file ties to the old one.
 - **Official values (decision 10).** Decision 10 says the writer or the build computes official values. Confirm which one, or both.
 

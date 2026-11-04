@@ -34,7 +34,7 @@ Writes and reads take separate paths. A write goes through a writer. A read skip
 
 The version rides on the header's mode: `header@1.0.0`. The signed claims hold that full mode, so the signature covers the version.
 
-The check tool holds a list of the versions it supports, as PDF and SQLite readers do. It matches the version as whole text, exactly. Any string is a valid version (`1.0.0`, `2.1.0-beta`, `stable`), and Yafi never compares or orders them. `header@1.0` does not match `header@1.0.0`. A file whose version is not on the list is corrupt as far as the tool is concerned, like any other file it cannot verify. It is quarantined whole, and a worker refuses that write so the caller retries. Builds and plain reads do not look at versions. Support for a new format version means adding it to the list, and a file never changes version, so a new version starts a new file.
+The screen tool holds a list of the versions it supports, as PDF and SQLite readers do. It matches the version as whole text, exactly. Any string is a valid version (`1.0.0`, `2.1.0-beta`, `stable`), and Yafi never compares or orders them. `header@1.0` does not match `header@1.0.0`. A file whose version is not on the list is corrupt as far as the tool is concerned, like any other file it cannot verify. It is quarantined whole, and a worker refuses that write so the caller retries. Builds and plain reads do not look at versions. Support for a new format version means adding it to the list, and a file never changes version, so a new version starts a new file.
 
 ## Record ids
 
@@ -48,7 +48,7 @@ Ed25519 is deterministic and JWS adds no randomness, so identical input gives an
 - **Size:** 128 bits.
 - **Source:** a cryptographically secure random number generator (CSPRNG), such as `crypto.getRandomValues` in Node or Bun. Never a timestamp, counter, or hash of the content.
 - **Encoding:** base64url without padding, 22 characters.
-- **Checked:** a verifier rejects a header whose `nonce` is missing or is not 22 base64url characters.
+- **Screened:** a verifier rejects a header whose `nonce` is missing or is not 22 base64url characters.
 - **Generated once:** when the file is created. A prune keeps the header line, so the nonce and the record id stay the same.
 
 ## Linking records
@@ -66,20 +66,20 @@ customer: /customer/alice.yaml#kQ3x9fT2bL7pW8nZaB1c2d/Vt3nQcR8yP1wLm6sDf4gHa/ema
 - An entry id is the first 22 characters of that entry's signature segment. Field paths follow JSON Pointer.
 - If a file is renamed, the relationship cache (a default build step) knows which files point to each record id, so only those files are rewritten. Without it, the owning worker finds them by scanning. The cache is derived from the files and can be rebuilt at any time.
 - Optionally, a renamed file leaves a stub at its old path pointing to the new one.
-- Open: a link to a field of the current state with no entry id (`#id//field`) is undecided, and the current checks reject it.
+- Open: a link to a field of the current state with no entry id (`#id//field`) is undecided, and the current screens reject it.
 - A link to an entry removed by a prune falls back to the record, with a "history pruned" warning.
 
 ## Broken or corrupted files
 
-If a signature or chain link fails to verify, the file is trusted up to the last entry that verifies. The check tool finds the problem and recovers the file automatically by writing it to quarantine (see [architecture.md](architecture.md#the-check-tool)). A worker runs it before every write, and a build can opt in to running it.
+If a signature or chain link fails to verify, the file is trusted up to the last entry that verifies. The screen tool finds the problem and recovers the file automatically by writing it to quarantine (see [architecture.md](architecture.md#the-screen-tool)). A worker runs it before every write, and a build can opt in to running it.
 
 One rule covers both cases: the problem data is logged to quarantine first, and only after that succeeds is the original changed.
 
 1. The bad part is written, as-is, into a quarantine record. The bad text is kept whole in a block field. For a partly bad file, it is everything after the break, and the record links back to the original by record id. A file with no verified header, or one whose `schema` differs from its folder's schema, is bad whole, and its `source` is the path alone, since it has no record id.
 2. Once that write succeeds, a partly bad file is overwritten with its verified part, with a conditional write so nothing new is lost. A wholly bad file is deleted.
-3. The write that triggered the check is refused with a retry. Writes resume from there. No admin is needed.
+3. The write that triggered the screen is refused with a retry. Writes resume from there. No admin is needed.
 
-If the quarantine write fails, the original is not touched. For a wholly bad file the delete is only an attempt, and nothing depends on its result. If the file is still there, the next check finds it again and logs it again. Same bytes find the same record, because its name comes from a hash of the logged text (`/quarantine/<source path>-<first 16 hex of the SHA-256>.yaml`), so nothing is logged twice. A file that changed in between is logged as new content.
+If the quarantine write fails, the original is not touched. For a wholly bad file the delete is only an attempt, and nothing depends on its result. If the file is still there, the next screen finds it again and logs it again. Same bytes find the same record, because its name comes from a hash of the logged text (`/quarantine/<source path>-<first 16 hex of the SHA-256>.yaml`), so nothing is logged twice. A file that changed in between is logged as new content.
 
 ```yaml
 schema: quarantine@1
@@ -95,18 +95,18 @@ yafi: checkpoint 2026-11-01T21:50:00Z eyJhbGciOiJFZDI1NTE5In0...Mw2kTp
 
 An admin can review the quarantine record later and, if anything was legitimate, write it back as a new entry.
 
-## Enforced checks
+## Enforced screens
 
-A folder of files becomes a database when every write is checked against the same rules, by a worker or, in Git-only sites, by the check tool in a test. Every write passes all enforced checks, or nothing is written. Yafi's own checks always run, in this order:
+A folder of files becomes a database when every write is screened against the same rules, by a worker or, in Git-only sites, by the screen tool in a test. Every write passes all enforced screens, or nothing is written. Yafi's own screens always run, in this order:
 
 0. **Authority:** the path is inside a folder the writing worker owns, and a new record uses that folder's schema. See [architecture.md](architecture.md#writes).
 1. **Existing file:** every signature and chain link already in the file verifies, and its `schema` is the folder's schema.
 2. **Entry:** the entry passes its record schema, uses a valid mode (`checkpoint`, `patch`, or `diff`), and the result of applying it still passes the schema. You write each schema and Yafi enforces it. JSON Schema defines the fields, and [CEL](https://cel.dev), a small and safe expression language, adds computed values and checks across fields (see [design.md](design.md#schemas)). A schema cannot be skipped, and a file or client cannot choose a different one, because the worker takes the header's `schema` from the folder.
 3. **Relationships:** every reference resolves, meaning the path exists and its record id matches the anchor, along with any entry id or field it names.
-4. **Write checks:** the admin's own steps from the manifest's write pipeline, such as permissions, in any language. Steps run in parallel unless one names another in `after`. A step only decides pass or fail, and every step must pass.
+4. **Write screens:** the admin's own steps from the manifest's write pipeline, such as permissions, in any language. Steps run in parallel unless one names another in `after`. A step only decides pass or fail, and every step must pass.
 5. **Write:** Yafi signs over the previous signature and appends with a conditional write. If the file changed since it was read, such as a duplicate or conflicting write, nothing is written, and the caller gets a conflict.
 
-The signature is a standard JOSE signature (RFC 7515) with `Ed25519`, the registered name (RFC 9864). A verifier finds the public key by `kid` in a JSON Web Key Set (RFC 7517). A plain hash such as SHA-256 is not enough, because anyone who edits a file can recompute it. A shared-secret HMAC is not enough either, because any verifier holding the secret could create entries. The signing key is kept separate from storage credentials, so storage access alone cannot forge signed records. Records changed only through Git have no worker, so they are not signed, and the check tool still checks their structure and schema as a test.
+The signature is a standard JOSE signature (RFC 7515) with `Ed25519`, the registered name (RFC 9864). A verifier finds the public key by `kid` in a JSON Web Key Set (RFC 7517). A plain hash such as SHA-256 is not enough, because anyone who edits a file can recompute it. A shared-secret HMAC is not enough either, because any verifier holding the secret could create entries. The signing key is kept separate from storage credentials, so storage access alone cannot forge signed records. Records changed only through Git have no worker, so they are not signed, and the screen tool still screens their structure and schema as a test.
 
 Only Yafi signs and appends. A success always means the entry is in the file. A write that did not land says so, and leaves the file as it was.
 
@@ -115,4 +115,4 @@ Only Yafi signs and appends. A success always means the entry is in the file. A 
 No locks. Every entry is written with a conditional write on the version that was read, so a write either lands or is refused with the file as it was.
 
 - **Two valid appends:** both read the same version, and the store lets one write through. The other gets a conflict (409, or 412 from the store), and nothing of it is written. It re-reads and retries, and its entry chains to the winner's.
-- **Two checks find the same corrupt file:** both log the same bytes to the same record, so there is one record. A partly bad file is overwritten by whichever conditional write lands first, and the other re-reads and checks again. A wholly bad file is deleted by either, and a delete of a file already gone is not an error. The delete takes no condition, so it can remove a file that a writer created in the meantime. The caller of a check that quarantined something gets "retry".
+- **Two screens find the same corrupt file:** both log the same bytes to the same record, so there is one record. A partly bad file is overwritten by whichever conditional write lands first, and the other re-reads and screens again. A wholly bad file is deleted by either, and a delete of a file already gone is not an error. The delete takes no condition, so it can remove a file that a writer created in the meantime. The caller of a screen that quarantined something gets "retry".

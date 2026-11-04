@@ -28,7 +28,7 @@ export function validatePipeline(nodes: Node[], label: string): string[] {
 /**
  * Runs `run(name)` for every node, each as soon as everything it follows has succeeded.
  * A failed step skips everything after it. With `failFast`, no new step starts after a failure
- * (steps already running finish), which is what write checks need.
+ * (steps already running finish), which is what write screens need.
  */
 export async function runPipeline(nodes: Node[], run: (name: string) => Promise<void>, o: { failFast?: boolean } = {}): Promise<Map<string, StepResult>> {
   const bad = validatePipeline(nodes, "pipeline");

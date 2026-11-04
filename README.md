@@ -74,20 +74,11 @@ flowchart LR
 
 ## Architecture
 
-A deployment is a **root**: one manifest, `/yafi.yaml`, plus the folders it governs. The manifest gives each **worker** sole write authority over its own folders, so no two workers share or nest folders. Each folder has exactly one schema, and one schema can cover many folders. Workers may read anywhere in the root, so they can check references and permissions.
+A deployment is a **root**: one manifest, `/yafi.yaml`, plus the folders it governs. The manifest gives each **worker** sole write authority over its own folders, so no two workers share or nest folders. Each folder has exactly one schema, and one schema can cover many folders. Workers may read anywhere in the root, so they can screen references and permissions.
 
-```mermaid
-flowchart TB
-    M["/yafi.yaml<br/>manifest"]
-    M --> W1[Worker: crm]
-    M --> W2[Worker: shop]
-    W1 -->|writes| F1["/customer/<br/>schema customer@1"]
-    W1 -->|writes| F2["/lead/<br/>schema customer@1"]
-    W2 -->|writes| F3["/order/<br/>schema order@1"]
-    W2 -.reads.-> F1
-```
+For example, a `crm` worker writes `/customer/` and `/lead/` (both `customer@1`), while a `shop` worker writes `/order/` (`order@1`) and may read `/customer/`.
 
-Before a worker writes, its write checks run: Yafi's own checks plus any that are plugged in. If they pass, the write happens. If they fail, nothing is written. Quarantine is just one effect of the checks: data found to be wrong is logged to quarantine before the file is fixed or removed. A write that succeeds is always in the file. A write that loses a race is refused with nothing written, and no locks are used. Terms and the manifest format are in [docs/architecture.md](docs/architecture.md), the checks are in [docs/record-format.md](docs/record-format.md#enforced-checks), and the races are in [Concurrent writes](docs/record-format.md#concurrent-writes).
+Before a worker writes, its write screens run: Yafi's own screens plus any that are plugged in. If they pass, the write happens. If they fail, nothing is written. Quarantine is just one effect of the screens: data found to be wrong is logged to quarantine before the file is fixed or removed. A write that succeeds is always in the file. A write that loses a race is refused with nothing written, and no locks are used. Terms and the manifest format are in [docs/architecture.md](docs/architecture.md), the screens are in [docs/record-format.md](docs/record-format.md#enforced-screens), and the races are in [Concurrent writes](docs/record-format.md#concurrent-writes).
 
 ## Goals
 
@@ -110,7 +101,7 @@ Most of the site is static files: pages, styles, and data that any web host can 
 
 Changes can come in two ways:
 
-- **Git only.** Records are YAML files in a Git repository. The author creates and edits them with a local YafiDB tool, which checks each record against its schema. The check tool runs as a test in the repository, so a bad record fails it. GitHub, GitLab, or a similar host builds and publishes the site on each push. No write API runs, so this mode adds no write surface beyond the Git host itself. This suits sites that change rarely, because each change is a commit. Git history shows who changed what, but authorship is verified only when commits are signed.
+- **Git only.** Records are YAML files in a Git repository. The author creates and edits them with a local YafiDB tool, which screens each record against its schema. The screen tool runs as a test in the repository, so a bad record fails it. GitHub, GitLab, or a similar host builds and publishes the site on each push. No write API runs, so this mode adds no write surface beyond the Git host itself. This suits sites that change rarely, because each change is a commit. Git history shows who changed what, but authorship is verified only when commits are signed.
 - **Optional workers.** A minimal write API, run as a few small workers, accepts changes such as form submissions. Each one validates the record, signs it, and writes it to storage. The site is then rebuilt and redeployed. The workers handle only writes, and visitors never reach them.
 
 Either way, the site is built from the records. The build can run in CI, or YafiDB can commit the generated site to a publish repository. See [docs/static-site.md](docs/static-site.md).
@@ -140,7 +131,7 @@ New to YafiDB? Start with [docs/design.md](docs/design.md), then browse [example
 | --- | --- |
 | [docs/architecture.md](docs/architecture.md) | Root, manifest, workers, pipelines, builds, and quarantine |
 | [docs/design.md](docs/design.md) | How the whole system works, with worked examples |
-| [docs/record-format.md](docs/record-format.md) | What each part of a record means, and how writes are checked and signed |
+| [docs/record-format.md](docs/record-format.md) | What each part of a record means, and how writes are screened and signed |
 | [docs/configuration.md](docs/configuration.md) | How to set up each part, with templates and plug-in interfaces |
 | [docs/static-site.md](docs/static-site.md) | How to publish a static website, with or without workers |
 | [docs/decisions.md](docs/decisions.md) | What was decided, what was rejected, and why |

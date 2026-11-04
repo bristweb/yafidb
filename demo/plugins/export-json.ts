@@ -11,7 +11,7 @@ const walk = async (base: string, dir: string): Promise<void> => {
     const p = join(dir, e.name);
     if (e.isDirectory()) await walk(base, p);
     else if (e.name.endsWith(".yaml") && e.name !== "yafi.yaml") {
-      const v = await parseFile(await readFile(p, "utf8"));   // a plain read: nothing is checked here
+      const v = await parseFile(await readFile(p, "utf8"));   // a plain read: nothing is screened here
       if (!v.header) continue;
       const rel = relative(base, p).replace(/\.yaml$/, ".json");
       await mkdir(dirname(join(out, rel)), { recursive: true });

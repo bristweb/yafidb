@@ -95,7 +95,7 @@ export function parseManifest(text: string): Manifest {
 }
 
 /** Every referenced schema must exist. */
-export async function checkSchemas(m: Manifest, getSchema: (n: string) => Promise<object | null>) {
+export async function screenSchemas(m: Manifest, getSchema: (n: string) => Promise<object | null>) {
   const missing = new Set<string>();
   for (const w of Object.values(m.workers)) for (const s of Object.values(w.folders)) if (!(await getSchema(s))) missing.add(s);
   if (missing.size) throw new ManifestError([...missing].map((s) => `schema ${s} does not exist`));
@@ -167,6 +167,6 @@ export async function loadManifest(storage: Storage, keys: KeyStore, o: { getSch
   const f = await storage.get(MANIFEST_PATH);
   if (!f) throw new ManifestError([`${MANIFEST_PATH} not found`]);
   const m = parseManifest(await verifyManifestText(f.body, keys, o.requireSigned));
-  if (o.getSchema) await checkSchemas(m, o.getSchema);
+  if (o.getSchema) await screenSchemas(m, o.getSchema);
   return m;
 }

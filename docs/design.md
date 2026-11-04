@@ -108,7 +108,7 @@ The parts below each have a default, and each can be set on its own.
 
 Write coordination across accounts is not in this list. It is an open design decision. See [Write coordination](#write-coordination-open-decision).
 
-Templates such as `s3+yaml+none` fill in the storage, format, and derived-output parts for you. Templates, an example config, and the interface descriptions are in [docs/configuration.md](configuration.md). A fully static website built from the files is described in [docs/static-site.md](static-site.md).
+Templates such as `s3+yaml+none` fill in the storage, format, and derived-output parts for you. Templates, an example config, and the interface descriptions are in [configuration.md](configuration.md). A fully static website built from the files is described in [static-site.md](static-site.md).
 
 ## Two worked examples
 
@@ -529,12 +529,17 @@ The race and partial-failure examples assume the proposed owner and saga design.
 
 ### What fits
 
-- Records that change rarely per entity and have a clear owner: ledgers, profiles, posts, ownership, follows, contracts, comments, and messages.
-- **Likes** work as per-user facts, with aggregated counts that tolerate a few seconds of delay.
+YafiDB fits records that change rarely per entity and have a clear owner:
+
+- **Ledgers and contracts** — signed, append-only history is built in
+- **Profiles, posts, and pages** — owned by one person or team, edited occasionally
+- **Ownership, follows, and subscriptions** — per-user facts with modest write rates
+- **Comments and messages** — owned records, written at human pace
+- **Likes** — per-user facts, with counts aggregated by a build step that tolerates a few seconds of delay
 
 ### What does not fit
 
-- Firehose streams such as access logs and telemetry. Use a purpose-built pipeline.
+- **Firehose streams** — access logs, telemetry, view counts, and watch-time data belong in a purpose-built streaming pipeline
 
 ### Scale notes
 

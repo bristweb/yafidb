@@ -1,6 +1,6 @@
 # Tradeoffs
 
-This document lists the real costs and risks of the design, so nobody is surprised later. Each item says what the cost is, when it matters, and what softens it.
+This document lists the real costs and risks of the design, so nobody is surprised later. Each item says what the cost is, when it matters, and what softens it. The last section covers what YafiDB does not fit at all.
 
 ## You own the engine
 
@@ -29,6 +29,10 @@ An immutable log conflicts with a request to delete a person's data. The answer 
 ## Schema evolution
 
 Records written under one schema version must stay readable under later versions. That means versioned schemas plus upgrade steps on read, or occasional migrations that start new files. A migration is clean, and it becomes a long-running job at large scale.
+
+## Git-only publishing is bounded by change frequency
+
+In Git-only mode every change is a commit, and the Git host rebuilds and republishes on each push. Git is a good fit for publishing only while the repository can support that change rate: slow writes, push conflicts, and repository growth all rise with frequency. Sites that change often should use workers and object storage instead.
 
 ## Git as a storage backend is under reconsideration
 
@@ -62,4 +66,8 @@ A formula change is an edit to a schema, with a before-and-after preview. It nee
 
 ## What it does not fit
 
-Firehose data such as access logs and telemetry. Use a purpose-built pipeline.
+These are not tradeoffs but mismatches. No configuration turns them into a fit:
+
+- **Firehose data** — access logs, telemetry, view counts, and watch-time data belong in a purpose-built streaming pipeline
+
+See [Fit and scale](design.md#fit-and-scale) for the full picture of what fits.

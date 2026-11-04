@@ -99,8 +99,8 @@ Before a worker writes, its write checks run: Yafi's own checks plus any that ar
 
 ## Good fit and limits
 
-- **Good fit:** records that change rarely and have a clear owner, such as ledgers, profiles, cap tables, recipe collections, guestbooks, and comments.
-- **Not a fit:** high-volume streams such as access logs and telemetry. Use a streaming pipeline for those.
+- **Good fit:** records that change rarely per entity and have a clear owner: ledgers, profiles, posts, ownership, follows, contracts, comments, and messages. Small collections such as recipes and guestbooks fit too.
+- **Not a fit:** firehose streams such as access logs and telemetry. Use a purpose-built pipeline for those.
 - **Git-only publishing:** every change is a commit, so use it only for sites that change rarely.
 - **Tradeoffs:** derived reads can lag writes by a few seconds, and storage request costs rise as write frequency grows. See [docs/tradeoffs.md](docs/tradeoffs.md).
 
@@ -130,7 +130,7 @@ YafiDB is made of parts you can swap to fit your infrastructure. Each part has a
 
 The writer is designed for TypeScript or JavaScript on Node or Bun, with no separate server. Schemas are language-neutral, so they apply the same way whatever runs them.
 
-Templates such as `s3+yaml+none` set the storage, format, and derived-output parts for you. A weekend project might use serverless functions, object storage, and no derived output. A ledger that moves money might add a dedicated database and a stricter write-coordination design. The files stay the same in both. See [docs/configuration.md](docs/configuration.md).
+Templates such as `s3+yaml+none` set the storage, format, and derived-output parts for you. A weekend project might use serverless functions, object storage, and a small SQLite file built on demand. A ledger that moves money might add a dedicated database and a stricter write-coordination design. The files stay the same in both. See [docs/configuration.md](docs/configuration.md).
 
 ## Learn more
 
